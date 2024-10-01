@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,6 +22,8 @@ limitations under the License.
 #include <NeoML/Dnn/Layers/Onnx/OnnxReshapeLayer.h>
 
 #include "onnx.pb.h"
+
+using namespace NeoML;
 
 namespace NeoOnnx {
 
@@ -62,6 +64,7 @@ CReshapeOperator::CReshapeOperator( const onnx::NodeProto& reshape, int opsetVer
 	// v5 - removed legacy optimization attribute, "shape" moved from attributes to inputs, supported new data types
 	// v13 - bfloat16 is supported
 	// v14 - allowzer attribute is added
+	// v19 - float-8 is supported
 	CheckNeoOnnxSupport( OpsetVersion >= 1 && OpsetVersion <= MaxOpsetVersion, "opset version", *this );
 
 	if( OpsetVersion < 5 ) {

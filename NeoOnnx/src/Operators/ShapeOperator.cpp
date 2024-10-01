@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -25,6 +25,8 @@ limitations under the License.
 
 #include "onnx.pb.h"
 
+using namespace NeoML;
+
 namespace NeoOnnx {
 
 CShapeOperator::CShapeOperator( const onnx::NodeProto& shape, int opsetVersion ) :
@@ -33,6 +35,7 @@ CShapeOperator::CShapeOperator( const onnx::NodeProto& shape, int opsetVersion )
 	// v1 - original
 	// v13 - bfloat16 is supported
 	// v15 - start and end attributes are added
+	// v19 - float-8 is supported
 	CheckNeoOnnxSupport( OpsetVersion >= 1 && OpsetVersion <= MaxOpsetVersion, "opset version", *this );
 
 	CheckOnnxProtocol( InputCount() == 1, "operator must have 1 input", *this );

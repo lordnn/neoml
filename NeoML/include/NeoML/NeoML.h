@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -65,6 +65,7 @@ limitations under the License.
 #include <NeoML/Dnn/Layers/MultichannelLookupLayer.h>
 #include <NeoML/Dnn/Layers/MultiheadAttentionLayer.h>
 #include <NeoML/Dnn/Layers/ObjectNormalizationLayer.h>
+#include <NeoML/Dnn/Layers/ParameterLayer.h>
 #include <NeoML/Dnn/Layers/PoolingLayer.h>
 #include <NeoML/Dnn/Layers/RecurrentLayer.h>
 #include <NeoML/Dnn/Layers/QrnnLayer.h>
@@ -97,6 +98,7 @@ limitations under the License.
 #include <NeoML/TraditionalML/WordDictionary.h>
 
 #include <NeoML/Dnn/DnnDistributed.h>
+#include <NeoML/Dnn/DnnLora.h>
 #include <NeoML/Dnn/DnnOptimization.h>
 #include <NeoML/Dnn/Layers/3dPoolingLayer.h>
 #include <NeoML/Dnn/Layers/3dTransposedConvLayer.h>
@@ -125,6 +127,7 @@ limitations under the License.
 #include <NeoML/Dnn/Layers/InterpolationLayer.h>
 #include <NeoML/Dnn/Layers/IrnnLayer.h>
 #include <NeoML/Dnn/Layers/LogicalLayers.h>
+#include <NeoML/Dnn/Layers/LoraFullyConnectedLayer.h>
 #include <NeoML/Dnn/Layers/LrnLayer.h>
 #include <NeoML/Dnn/Layers/MaxOverTimePoolingLayer.h>
 #include <NeoML/Dnn/Layers/ModelWrapperLayer.h>
@@ -146,6 +149,3 @@ limitations under the License.
 #endif //!NEOML_COMPACT
 #include <NeoML/ArchiveFile.h>
 
-#ifndef NO_NEOML_NAMESPACE
-using namespace NeoML;
-#endif

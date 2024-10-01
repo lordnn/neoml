@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -32,6 +32,33 @@ IMathEngine& MathEngine();
 
 //------------------------------------------------------------------------------------------------------------
 
+// Yellow output
+class NeoMLTestHighlightedOutput final {
+public:
+	NeoMLTestHighlightedOutput( ::std::ostream& _log ) : log( _log ) { log << "\u001b[33m"; }
+	~NeoMLTestHighlightedOutput() { log << "\u001b[0m"; }
+
+	template <typename T> ::std::ostream& operator<<( T t ) { return log << t; }
+private:
+	::std::ostream& log;
+};
+
+#define NEOML_HILIGHT( log )   NeoMLTestHighlightedOutput( log )
+
+inline ::std::ostream& operator<<( ::std::ostream& s, TMathEngineType met )
+{
+	switch( met ) {
+		case MET_Cpu: s << "MET_Cpu"; break;
+		case MET_Cuda: s << "MET_Cuda"; break;
+		case MET_Metal: s << "MET_Metal"; break;
+		case MET_Vulkan: s << "MET_Vulkan"; break;
+		default: ASSERT_EXPR( false );
+	}
+	return s;
+}
+
+//------------------------------------------------------------------------------------------------------------
+
 inline bool FloatEq( float val1, float val2, float precision = 1e-05 )
 {
 	if( val1 >= FLT_MAX ) {
@@ -53,6 +80,21 @@ inline bool FloatEq( float val1, float val2, float precision = 1e-05 )
 
 #define FLT_MIN_LOG -87.33654474f
 #define FLT_MAX_LOG 88.f
+
+inline float ExponentFunc(float f)
+{
+	if (f < FLT_MIN_LOG) {
+		return 0;
+	}
+	else if (f > FLT_MAX_LOG) {
+		return FLT_MAX;
+	}
+	else {
+		return expf(f);
+	}
+}
+
+//------------------------------------------------------------------------------------------------------------
 
 #define CARRAY_WRAPPER(TYPE, arr) CBufferWrapper<TYPE>( MathEngine(), ( arr.data() ), ( static_cast<int>( arr.size() ) ) )
 #define CARRAY_FLOAT_WRAPPER(arr) CARRAY_WRAPPER(float, arr)
@@ -189,7 +231,7 @@ class CTestFixtureWithParams : public CTestFixture, public ::testing::WithParamI
 //------------------------------------------------------------------------------------------------------------
 
 #define RUN_TEST_IMPL( impl ) { \
-	CTestParams params = GetParam(); \
+	const CTestParams& params = GetParam(); \
 	const int testCount = params.GetValue<int>( "TestCount" ); \
 	for( int test = 0; test < testCount; ++test ) { \
 		impl ( params, 282 + test * 10000 + test % 3  ); \
@@ -232,15 +274,7 @@ public:
 		mathEngine.DataExchangeTyped<float>( values, _values.data(), _values.size() );
 	}
 
-	CSparseMatrixDesc Desc() const
-	{
-		CSparseMatrixDesc desc;
-		desc.ElementCount = elementCount;
-		desc.Rows = rows;
-		desc.Columns = columns;
-		desc.Values = values;
-		return desc;
-	}
+	CSparseMatrixDesc Desc() const { return CSparseMatrixDesc( elementCount, rows, columns, values ); }
 
 private:
 	int elementCount;

@@ -1,4 +1,4 @@
-/* Copyright © 2017-2022 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,6 +26,8 @@ limitations under the License.
 #include "TensorUtils.h"
 
 #include <NeoML/Dnn/Layers/Onnx/OnnxResizeLayer.h>
+
+using namespace NeoML;
 
 namespace NeoOnnx {
 
@@ -125,7 +127,7 @@ TInterpolationCoords CResizeOperator::getInterpolationCoords() const
 		return TInterpolationCoords::AlignCorners;
 	} else if( coordMode == "asymmetric" ) {
 		return TInterpolationCoords::Asymmetric;
-	} else if( coordMode == "tf_half_pixel_for_nn" || coordMode == "tf_crop_and_resize" ) {
+	} else if( coordMode == "tf_half_pixel_for_nn" || coordMode == "tf_crop_and_resize" || coordMode == "half_pixel_symmetric" ) {
 		CheckNeoOnnxSupport( false, "unsupported 'coordinate_transformation_mode'", *this );
 	}
 	CheckOnnxProtocol( false, "unknown 'coordinate_transformation_mode'", *this );

@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ limitations under the License.
 namespace NeoML {
 
 __global__ void Blob3dMaxPoolingKernel( const CCuda3dMaxPoolingDescInternal desc, const float* __restrict__ sourceData,
-	int* maxIndices, float* resultData )
+	int* __restrict__ maxIndices, float* __restrict__ resultData )
 {
 	const CCudaBlobDesc& result = desc.Result;
 	const CCudaBlobDesc& source = desc.Source;
@@ -32,9 +32,9 @@ __global__ void Blob3dMaxPoolingKernel( const CCuda3dMaxPoolingDescInternal desc
 	const int resultObjectSize = result.Channels() * resultGeomSize;
 	const int totalChannels = source.Channels();
 
-	int b;
-	int pos;
-	int channel;
+	int b = 0;
+	int pos = 0;
+	int channel = 0;
 	if( !GetCudaTaskIndex3D( result.ObjectCount(), resultGeomSize, totalChannels, b, pos, channel ) ) {
 		return;
 	}
@@ -83,22 +83,22 @@ __global__ void Blob3dMaxPoolingKernel( const CCuda3dMaxPoolingDescInternal desc
 	}
 }
 
-__global__ void Blob3dMaxPoolingBackwardKernel( const CCuda3dMaxPoolingDescInternal desc, const float* resultDiff,
-	const int* maxIndices, float* sourceDiff, bool isAtomic )
+__global__ void Blob3dMaxPoolingBackwardKernel( const CCuda3dMaxPoolingDescInternal desc, const float* __restrict__ resultDiff,
+	const int* __restrict__ maxIndices, float* __restrict__ sourceDiff, bool isAtomic )
 {
 	const CCudaBlobDesc& result = desc.Result;
 	const CCudaBlobDesc& source = desc.Source;
 
 	const int resultGeomSize = result.Depth() * result.Height() * result.Width();
 
-	int b;
-	int pos;
-	int channel;
+	int b = 0;
+	int pos = 0;
+	int channel = 0;
 	if( !GetCudaTaskIndex3D( result.ObjectCount(), resultGeomSize, result.Channels(), b, pos, channel ) ) {
 		return;
 	}
 
-	float* sourcePtr = sourceDiff + b * source.ObjectSize();
+	float* const sourcePtr = sourceDiff + b * source.ObjectSize();
 
 	const int resultShift = ( b * resultGeomSize + pos ) * result.Channels() + channel;
 	const int index = maxIndices[resultShift] + channel;
@@ -121,9 +121,9 @@ __global__ void Blob3dMeanPoolingKernel( const CCuda3dMeanPoolingDescInternal de
 	const int totalChannels = result.Channels();
 	const int resultObjectSize = totalChannels * resultGeomSize;
 
-	int b;
-	int pos;
-	int channel;
+	int b = 0;
+	int pos = 0;
+	int channel = 0;
 	if( !GetCudaTaskIndex3D( result.ObjectCount(), resultGeomSize, result.Channels(), b, pos, channel ) ) {
 		return;
 	}
@@ -131,7 +131,7 @@ __global__ void Blob3dMeanPoolingKernel( const CCuda3dMeanPoolingDescInternal de
 	const int resultShift = b * resultObjectSize + pos * totalChannels + channel;
 
 	const int sourceGeomSize = source.Depth() * source.Height() * source.Width();
-	const float* sourcePtr = sourceData + b * totalChannels * sourceGeomSize;
+	const float* const sourcePtr = sourceData + b * totalChannels * sourceGeomSize;
 
 	// Output position
 	const int kOut = pos % result.Depth();
@@ -172,9 +172,9 @@ __global__ void Blob3dMeanPoolingBackwardKernel( const CCuda3dMeanPoolingDescInt
 	const int resultGeomSize = result.Depth() * result.Height() * result.Width();
 	const int totalChannels = result.Channels();
 
-	int b;
-	int pos;
-	int channel;
+	int b = 0;
+	int pos = 0;
+	int channel = 0;
 	if( !GetCudaTaskIndex3D( result.ObjectCount(), resultGeomSize, totalChannels, b, pos, channel ) ) {
 		return;
 	}
@@ -193,7 +193,9 @@ __global__ void Blob3dMeanPoolingBackwardKernel( const CCuda3dMeanPoolingDescInt
 	const int iStart = iOut * desc.StrideWidth;
 	const int kStart = kOut * desc.StrideDepth;
 
-	float* sourcePtr = sourceDiff + ( ( ( b * source.Height() + jStart ) * source.Width() + iStart ) * source.Depth() + kStart ) * totalChannels + channel;
+	float* sourcePtr = sourceDiff
+		+ ( ( ( b * source.Height() + jStart ) * source.Width() + iStart ) * source.Depth() + kStart )
+		* totalChannels + channel;
 	const int sourceWDC = source.Width() * source.Depth() * source.Channels();
 
 	if( isAtomic ) {

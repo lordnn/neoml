@@ -1,4 +1,4 @@
-/* Copyright © 2021-2023 ABBYY
+/* Copyright © 2021-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ limitations under the License.
 using namespace NeoML;
 using namespace NeoMLTest;
 
+namespace NeoMLTest {
+
 // Returns coefficient of neuron with one in and one out.
 static float getFcCoeff( const CFullyConnectedLayer* fcLayer )
 {
@@ -28,9 +30,20 @@ static float getFcCoeff( const CFullyConnectedLayer* fcLayer )
 	return fcLayer->GetWeightsData()->GetData().GetValue();
 }
 
+} // namespace NeoMLTest
+
+//---------------------------------------------------------------------------------------------------------------------
+
 // Check build/change correctness with gradient accumulation enabled
 TEST( CDnnSolverTest, NetworkModificationOnGradientAccumulation )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	// Sinus approximation.
 	const int DataCount = 10;
 	CArray<float> x, y;
@@ -150,51 +163,68 @@ TEST( CDnnSolverTest, NetworkModificationOnGradientAccumulation )
 	EXPECT_EQ( e1, e2 );
 }
 
-// Net for weight check.
-class CWeightCheckNet {
+//---------------------------------------------------------------------------------------------------------------------
+
+namespace NeoMLTest {
+
+// Network for weights check.
+class CWeightCheckNet final {
 public:
-	CWeightCheckNet();
-	void SetSolver( CDnnSolver* solver ) { dnn.SetSolver( solver ); }
+	CWeightCheckNet( CDnnSolver* solver );
+
 	float RunAndLearnOnce();
 	void GetWeights( CArray<float>& weights ) const;
+	void CleanUp();
+
 private:
 	CRandom random;
 	CDnn dnn;
+
+	CPtr<CSourceLayer> data;
+	CPtr<CSourceLayer> label;
 	CPtr<CFullyConnectedLayer> fc;
 	CPtr<CLossLayer> loss;
+
+	void setInputs();
 };
 
-CWeightCheckNet::CWeightCheckNet() :
+CWeightCheckNet::CWeightCheckNet( CDnnSolver* solver ) :
 	random( 0xAAAAAAAA ),
 	dnn( random, MathEngine() )
 {
-	CPtr<CSourceLayer> data = AddLayer<CSourceLayer>( "data", dnn );
+	dnn.SetSolver( solver );
+
+	data = AddLayer<CSourceLayer>( "data", dnn );
+	label = AddLayer<CSourceLayer>( "label", dnn );
+
+	fc = AddLayer<CFullyConnectedLayer>( "fc", { data } );
+	fc->SetNumberOfElements( 2 );
+	fc->SetZeroFreeTerm( true );
+
+	loss = AddLayer<CCrossEntropyLossLayer>( "loss", { fc, label } );
+	setInputs();
+}
+
+void CWeightCheckNet::setInputs()
+{
 	{
 		CPtr<CDnnBlob> dataBlob = CDnnBlob::CreateDataBlob( MathEngine(), CT_Float, 1, 1, 2 );
 		CArray<float> buff( { 0.25f, -0.345f } );
 		dataBlob->CopyFrom( buff.GetPtr() );
 		data->SetBlob( dataBlob );
 	}
-
-	CPtr<CSourceLayer> label = AddLayer<CSourceLayer>( "label", dnn );
 	{
 		CPtr<CDnnBlob> labelBlob = CDnnBlob::CreateDataBlob( MathEngine(), CT_Int, 1, 1, 1 );
 		CArray<int> buff( { 0 } );
 		labelBlob->CopyFrom( buff.GetPtr() );
 		label->SetBlob( labelBlob );
 	}
-
-	fc = AddLayer<CFullyConnectedLayer>( "fc", { data } );
-	fc->SetNumberOfElements( 2 );
-	fc->SetZeroFreeTerm( true );
 	{
 		CPtr<CDnnBlob> weightBlob = CDnnBlob::CreateDataBlob( MathEngine(), CT_Float, 1, 2, 2 );
 		CArray<float> buff = { -0.5f, 0.9f, 0.3f, -0.7f };
 		weightBlob->CopyFrom( buff.GetPtr() );
 		fc->SetWeightsData( weightBlob );
 	}
-
-	loss = AddLayer<CCrossEntropyLossLayer>( "loss", { fc, label } );
 }
 
 float CWeightCheckNet::RunAndLearnOnce()
@@ -210,27 +240,55 @@ void CWeightCheckNet::GetWeights( CArray<float>& weights ) const
 	weightBlob->CopyTo( weights.GetPtr() );
 }
 
+void CWeightCheckNet::CleanUp()
+{
+	dnn.CleanUp( /*totalCleanUp*/true );
+	MathEngine().CleanUp();
+	dnn.Random().Reset( 0xAAAAAAAA );
+	dnn.GetSolver()->Reset();
+	setInputs();
+}
+
+//---------------------------------------------------------------------------------------------------------------------
+
 void testSolver( CDnnSolver* solver, const CArray<CArray<float>>& expected )
 {
-	CWeightCheckNet net;
 	CArray<float> weights;
-	net.SetSolver( solver );
+	auto check = [&]( CWeightCheckNet& net )
+	{
 	for( int i = 0; i < expected.Size(); ++i ) {
 		float loss = net.RunAndLearnOnce();
 		loss;
 		net.GetWeights( weights );
-		ASSERT_EQ( expected[i].Size(), weights.Size() );
+		EXPECT_EQ( expected[i].Size(), weights.Size() );
 		for( int j = 0; j < weights.Size(); ++j ) {
-			ASSERT_TRUE( FloatEq( expected[i][j], weights[j] ) );
+			EXPECT_NEAR( expected[i][j], weights[j], 1e-5 );
 		}
 	}
+	};
+
+	CWeightCheckNet net( solver );
+	check( net );
+
+	net.CleanUp();
+	check( net );
 }
 
-// ====================================================================================================================
+} // namespace NeoMLTest
+
+//---------------------------------------------------------------------------------------------------------------------
+
 // Sgd.
 
 TEST( CDnnSolverTest, SgdNoReg )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.415048f, 0.782767f, 0.215048f, -0.582767f };
@@ -244,11 +302,19 @@ TEST( CDnnSolverTest, SgdNoReg )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( false );
+
 	testSolver( sgd, expected );
 }
 
 TEST( CDnnSolverTest, SgdL1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.165048f, 0.332767f, 0.065048f, -0.232767f };
@@ -262,11 +328,19 @@ TEST( CDnnSolverTest, SgdL1 )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( false );
+
 	testSolver( sgd, expected );
 }
 
 TEST( CDnnSolverTest, SgdL2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.290048f, 0.557766f, 0.140048f, -0.407767f };
@@ -280,6 +354,7 @@ TEST( CDnnSolverTest, SgdL2 )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( false );
+
 	testSolver( sgd, expected );
 }
 
@@ -287,6 +362,13 @@ TEST( CDnnSolverTest, SgdL2 )
 
 TEST( CDnnSolverTest, SgdCompatNoReg )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.491505f, 0.888277f, 0.291505f, -0.688277f };
@@ -300,11 +382,19 @@ TEST( CDnnSolverTest, SgdCompatNoReg )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( true );
+
 	testSolver( sgd, expected );
 }
 
 TEST( CDnnSolverTest, SgdCompatL1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.241505f, 0.638277f, 0.141505f, -0.438277f };
@@ -318,11 +408,19 @@ TEST( CDnnSolverTest, SgdCompatL1 )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( true );
+
 	testSolver( sgd, expected );
 }
 
 TEST( CDnnSolverTest, SgdCompatL2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.479005f, 0.865777f, 0.284005f, -0.670777f };
@@ -336,14 +434,23 @@ TEST( CDnnSolverTest, SgdCompatL2 )
 	sgd->SetMomentDecayRate( 0.9f );
 	sgd->SetLearningRate( 0.5f );
 	sgd->SetCompatibilityMode( true );
+
 	testSolver( sgd, expected );
 }
 
-// ====================================================================================================================
+//---------------------------------------------------------------------------------------------------------------------
+
 // Adam.
 
 TEST( CDnnSolverTest, AdamNoReg )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.000001f, 0.400001f, -0.199999f, -0.200001f };
@@ -365,6 +472,13 @@ TEST( CDnnSolverTest, AdamNoReg )
 
 TEST( CDnnSolverTest, AdamL1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.000000f, 0.400000f, -0.200000f, -0.200000f };
@@ -386,6 +500,13 @@ TEST( CDnnSolverTest, AdamL1 )
 
 TEST( CDnnSolverTest, AdamL2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.000000f, 0.400000f, -0.199999f, -0.200000f };
@@ -408,6 +529,13 @@ TEST( CDnnSolverTest, AdamL2 )
 // Adam with backward compatibility.
 TEST( CDnnSolverTest, AdamCompatNoReg )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.450000f, 0.850000f, 0.250000f, -0.650000f };
@@ -429,6 +557,13 @@ TEST( CDnnSolverTest, AdamCompatNoReg )
 
 TEST( CDnnSolverTest, AdamCompatL1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.450000f, 0.850000f, 0.250000f, -0.650000f };
@@ -450,6 +585,13 @@ TEST( CDnnSolverTest, AdamCompatL1 )
 
 TEST( CDnnSolverTest, AdamCompatL2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.450000f, 0.850000f, 0.250000f, -0.650000f };
@@ -469,11 +611,19 @@ TEST( CDnnSolverTest, AdamCompatL2 )
 	testSolver( adam, expected );
 }
 
-// ====================================================================================================================
+//---------------------------------------------------------------------------------------------------------------------
+
 // Nadam.
 
 TEST( CDnnSolverTest, NadamNoReg )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { 0.028226f, 0.371774f, -0.228226f, -0.171774f };
@@ -494,6 +644,13 @@ TEST( CDnnSolverTest, NadamNoReg )
 
 TEST( CDnnSolverTest, NadamL1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.806726f, 0.504541f, 0.036822f, -1.039008f };
@@ -514,6 +671,13 @@ TEST( CDnnSolverTest, NadamL1 )
 
 TEST( CDnnSolverTest, NadamL2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CArray<CArray<float>> expected;
 	expected.SetSize( 5 );
 	expected[0] = { -0.681726f, 0.529541f, 0.111822f, -0.964008f };
@@ -531,6 +695,12 @@ TEST( CDnnSolverTest, NadamL2 )
 
 	testSolver( adam, expected );
 }
+
+//---------------------------------------------------------------------------------------------------------------------
+
+// Serialization.
+
+namespace NeoMLTest {
 
 static bool checkBlobEquality( CDnnBlob& firstBlob, CDnnBlob& secondBlob )
 {
@@ -683,8 +853,19 @@ static void solverSerializationTestImpl( CPtr<CDnnSolver> firstSolver, bool trai
 	EXPECT_TRUE( checkLstmEquality( reverse, secondReverse ) );
 }
 
+} // namespace NeoMLTest
+
+// sgd.
+
 TEST( CDnnSimpleGradientSolverTest, Serialization1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnSimpleGradientSolver> sgd = new CDnnSimpleGradientSolver( MathEngine() );
 	sgd->SetCompatibilityMode( false );
 	sgd->SetL1Regularization( 1e-3 );
@@ -697,6 +878,13 @@ TEST( CDnnSimpleGradientSolverTest, Serialization1 )
 
 TEST( CDnnSimpleGradientSolverTest, Serialization2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnSimpleGradientSolver> sgd = new CDnnSimpleGradientSolver( MathEngine() );
 	sgd->SetCompatibilityMode( true );
 	sgd->SetL1Regularization( 0.f );
@@ -707,8 +895,19 @@ TEST( CDnnSimpleGradientSolverTest, Serialization2 )
 	solverSerializationTestImpl( sgd.Ptr(), false );
 }
 
+//---------------------------------------------------------------------------------------------------------------------
+
+// Adam.
+
 TEST( CDnnAdaptiveGradientSolverTest, Serialization1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnAdaptiveGradientSolver> adam = new CDnnAdaptiveGradientSolver( MathEngine() );
 	adam->EnableAmsGrad( false );
 	adam->EnableDecoupledWeightDecay( false );
@@ -725,6 +924,13 @@ TEST( CDnnAdaptiveGradientSolverTest, Serialization1 )
 
 TEST( CDnnAdaptiveGradientSolverTest, Serialization2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnAdaptiveGradientSolver> adam = new CDnnAdaptiveGradientSolver( MathEngine() );
 	adam->EnableAmsGrad( true );
 	adam->EnableDecoupledWeightDecay( true );
@@ -741,6 +947,13 @@ TEST( CDnnAdaptiveGradientSolverTest, Serialization2 )
 
 TEST( CDnnNesterovGradientSolverTest, Serialization1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnNesterovGradientSolver> nadam = new CDnnNesterovGradientSolver( MathEngine() );
 	nadam->EnableAmsGrad( false );
 	nadam->EnableDecoupledWeightDecay( false );
@@ -756,6 +969,13 @@ TEST( CDnnNesterovGradientSolverTest, Serialization1 )
 
 TEST( CDnnNesterovGradientSolverTest, Serialization2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnNesterovGradientSolver> nadam = new CDnnNesterovGradientSolver( MathEngine() );
 	nadam->EnableAmsGrad( true );
 	nadam->EnableDecoupledWeightDecay( true );
@@ -769,8 +989,19 @@ TEST( CDnnNesterovGradientSolverTest, Serialization2 )
 	solverSerializationTestImpl( nadam.Ptr(), false );
 }
 
+//---------------------------------------------------------------------------------------------------------------------
+
+// Lamb.
+
 TEST( CDnnLambGradientSolverTest, Serialization1 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnLambGradientSolver> lamb = new CDnnLambGradientSolver( MathEngine() );
 	lamb->ExcludeWeightDecayLayer( "_lstm", CDnnLambGradientSolver::ELNMT_Include, 1 );
 	lamb->SetEpsilon( 1e-3 );
@@ -788,6 +1019,13 @@ TEST( CDnnLambGradientSolverTest, Serialization1 )
 
 TEST( CDnnLambGradientSolverTest, Serialization2 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnLambGradientSolver> lamb = new CDnnLambGradientSolver( MathEngine() );
 	lamb->SetEpsilon( 2e-5 );
 	lamb->SetL1Regularization( 1e-5f );
@@ -804,6 +1042,13 @@ TEST( CDnnLambGradientSolverTest, Serialization2 )
 
 TEST( CDnnLambGradientSolverTest, Serialization3 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnLambGradientSolver> lamb = new CDnnLambGradientSolver( MathEngine() );
 	lamb->SetEpsilon( 1e-6 );
 	lamb->SetL1Regularization( 3e-5f );
@@ -820,6 +1065,13 @@ TEST( CDnnLambGradientSolverTest, Serialization3 )
 
 TEST( CDnnLambGradientSolverTest, Serialization4 )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// dnn.RunAndLearnOnce -> VectorHuberDerivative
+		return;
+	}
+
 	CPtr<CDnnLambGradientSolver> lamb = new CDnnLambGradientSolver( MathEngine() );
 	lamb->SetEpsilon( 1e-4 );
 	lamb->SetL1Regularization( 0 );
@@ -834,10 +1086,17 @@ TEST( CDnnLambGradientSolverTest, Serialization4 )
 	solverSerializationTestImpl( lamb.Ptr(), true );
 }
 
-// ====================================================================================================================
+//---------------------------------------------------------------------------------------------------------------------
 
 TEST( CDnnSolverTest, CompositeLearningRate )
 {
+	const auto met = MathEngine().GetType();
+	if(met != MET_Cpu && met != MET_Cuda) {
+		NEOML_HILIGHT( GTEST_LOG_( INFO ) ) << "Skipped rest of test for MathEngine type=" << met << " because no implementation.\n";
+		// BatchCalculateLossAndGradient -> VectorEltwiseNotNegative
+		return;
+	}
+
 	// There was a bug when only BaseLearningRate of the layer itself was taken into account
 	// Even when the layer was inside the reccurent which was inside the recurrent/composite
 	CRandom random( 0x1234 );

@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,10 +21,9 @@ limitations under the License.
 
 #include <NeoMathEngine/NeoMathEngine.h>
 #include <DllLoader.h>
-#include <RawMemoryManager.h>
+#include <MemoryEngineMixin.h>
 #include <cusparse.h>
 #include <cublas.h>
-#include <mutex>
 #include <memory>
 #include <PerformanceCountersDefault.h>
 #include <CudaMathEngineDnnDistributed.h>
@@ -38,12 +37,9 @@ struct CCuda3dConvolutionDescInternal;
 struct CCusparse;
 struct CCublas;
 struct CCudaDevice;
-class CDeviceStackAllocator;
-class CHostStackAllocator;
-class CMemoryPool;
 
 // CUDA math engine
-class CCudaMathEngine : public IMathEngine, public IRawMemoryManager {
+class CCudaMathEngine : public CMemoryEngineMixin, public IRawMemoryManager {
 public:
 	CCudaMathEngine( const CCusparse* cusparse, const CCublas* cublas, std::unique_ptr<CCudaDevice>& device, int flags = 0 );
 	~CCudaMathEngine() override;
@@ -51,20 +47,9 @@ public:
 	// IMathEngine interface methods
 	TMathEngineType GetType() const override { return MET_Cuda; }
 	void GetMathEngineInfo( CMathEngineInfo& info ) const override;
-	void SetReuseMemoryMode( bool enable ) override;
-	CMemoryHandle HeapAlloc( size_t count ) override;
-	void HeapFree( const CMemoryHandle& handle ) override;
-	CMemoryHandle StackAlloc( size_t count ) override;
-	void StackFree( const CMemoryHandle& handle ) override;
-	size_t GetFreeMemorySize() const override;
-	size_t GetPeakMemoryUsage() const override;
-	size_t GetMemoryInPools() const override;
-	void CleanUp() override;
-	void* GetBuffer( const CMemoryHandle& handle, size_t pos, size_t size, bool exchange ) override;
-	void ReleaseBuffer( const CMemoryHandle& handle, void* ptr, bool exchange ) override;
+
 	void DataExchangeRaw( const CMemoryHandle& handle, const void* data, size_t size ) override;
 	void DataExchangeRaw( void* data, const CMemoryHandle& handle, size_t size ) override;
-	CMemoryHandle CopyFrom( const CMemoryHandle& handle, size_t size ) override;
 
 	// IVectorMathematicsEngine interface methods
 	void VectorFill( const CFloatHandle& result, float value, int vectorSize ) override;
@@ -344,12 +329,10 @@ public:
 		const CConstFloatHandle& firstHandle, int firstSize, const CLookupVector& secondVector ) override;
 	void MultiplyMatrixByTransposedMatrix( const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, int firstRowSize, const CConstFloatHandle& secondHandle, int secondHeight, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle,
 		int firstHeight, int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight,
-		const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplySparseMatrixByTransposedMatrix( int firstHeight, int firstWidth, int secondHeight,
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixBySparseMatrix( int firstHeight, int firstWidth, int secondWidth,
@@ -363,11 +346,9 @@ public:
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixByMatrixAndAdd( const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth, int firstRowSize,
 		const CConstFloatHandle& secondHandle, int secondWidth, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyTransposedMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyDiagMatrixByMatrix( const CConstFloatHandle& firstHandle, int firstSize,
 		const CConstFloatHandle& secondHandle, int secondWidth,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -376,8 +357,7 @@ public:
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondWidth,
-		const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void BatchMultiplyMatrixByDiagMatrix( int batchSize, const CConstFloatHandle& firstHandle, int height,
 		int width, int firstMatrixOffset, const CConstFloatHandle& secondHandle, int secondMatrixOffset,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -457,12 +437,6 @@ public:
 	void BlobChannelwiseConvolutionLearnAdd( const CChannelwiseConvolutionDesc& convDesc,
 		const CConstFloatHandle& input, const CConstFloatHandle& outputDiff, const CFloatHandle& filterDiff,
 		const CFloatHandle* freeTermDiff ) override;
-
-	CSmallMatricesMultiplyDesc* InitSmallMatricesMultiplyDesc(
-		int /*firstHeight*/, int /*firstWidth*/, int /*secondWidth*/, int /*secondRowSize*/, int /*resultWidth*/,
-		bool /*resultAdd*/, bool /*trans1*/, bool /*trans2*/ ) const override
-	{ return new CSmallMatricesMultiplyDesc{}; }
-
 	CGlobalMaxPoolingDesc* InitGlobalMaxPooling( const CBlobDesc& source, const CBlobDesc& maxIndices, const CBlobDesc& result ) override;
 	void BlobGlobalMaxPooling( const CGlobalMaxPoolingDesc& desc,
 		const CConstFloatHandle& source, const CIntHandle& maxIndices, const CFloatHandle& result ) override;
@@ -602,13 +576,12 @@ public:
 		const CConstFloatHandle& expandFilter, const CConstFloatHandle* expandFreeTerm,
 		TActivationFunction expandActivation, float expandReluParam, const CConstFloatHandle& channelwiseFilter,
 		const CConstFloatHandle* channelwiseFreeTerm, TActivationFunction channelwiseActivation,
-		float channelwiseReluParam, const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* descs = nullptr ) override;
+		float channelwiseReluParam, const CFloatHandle& outputHandle ) override;
 	void MobileNetV3PostSEBlock( const CBlobDesc& channelwiseOutputDesc, int outputChannels,
 		const CConstFloatHandle& channelwiseOutputHandle, const CConstFloatHandle& squeezeAndExciteHandle,
 		const CConstFloatHandle* residualHandle, TActivationFunction activation, float reluParam,
 		const CConstFloatHandle& downFilterHandle, const CConstFloatHandle* downFreeTermHandle,
-		const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* descs = nullptr ) override;
-	CSmallMatricesMultiplyDescsArray* InitSmallMatricesMultiplyDescsArray() override { return new CSmallMatricesMultiplyDescsArray{}; }
+		const CFloatHandle& outputHandle ) override;
 	// WARNING: Rowwise computation is ineffective on GPUs
 	CRowwiseOperationDesc* InitRowwiseActivation( const CActivationDesc& desc ) override;
 	CRowwiseOperationDesc* InitRowwiseChWith1x1( int stride, const CConstFloatHandle& channelwiseFilter,
@@ -637,16 +610,18 @@ public:
 	void RowwiseExecute( const CBlobDesc& inputDesc, CRowwiseOperationDesc** operations, int operationCount,
 		const CFloatHandle& input, const CFloatHandle& output ) override;
 
-	IPerformanceCounters* CreatePerformanceCounters() const override { 	return new CPerformanceCountersDefault(); }
+	IPerformanceCounters* CreatePerformanceCounters( bool ) const override { return new CPerformanceCountersDefault(); }
+	// For Distributed only
 	void AllReduce( const CFloatHandle& handle, int size ) override;
 	void Broadcast( const CFloatHandle& handle, int size, int root ) override;
 	void AbortDistributed() override;
 	CMathEngineDistributedInfo GetDistributedInfo() override { return distributedInfo; }
-	bool IsDistributed() override { return distributedInfo.Threads > 1; }
+	bool IsDistributed() const override { return distributedInfo.Threads > 1; }
 #ifdef NEOML_USE_NCCL
 	void SetDistributedCommunicator( const ncclUniqueId& uniqueId, const CMathEngineDistributedInfo& info,
 		std::shared_ptr<std::atomic<bool>> isAbort );
 #endif
+
 protected:
 	// IRawMemoryManager interface methods
 	CMemoryHandle Alloc( size_t size ) override;
@@ -660,13 +635,9 @@ private:
 	const float* cudaConstZero; // pointer to __constant__ == 0.f
 	const float* cudaConstOne; // pointer to __constant__ == 1.f
 
-	mutable std::mutex mutex; // protects the data below
 	std::unique_ptr<CCudaDevice> device; // the device descriptor
 	cublasHandle_t cublasHandle; // cublas library handle
 	cusparseHandle_t cusparseHandle; // cusparse library handle
-	std::unique_ptr<CMemoryPool> memoryPool; // memory manager
-	std::unique_ptr<CDeviceStackAllocator> deviceStackRunTime; // GPU memory stack allocator
-	std::unique_ptr<CHostStackAllocator> hostStackRunTime; // regular memory stack allocator
 	CMathEngineDistributedInfo distributedInfo;
 #ifdef NEOML_USE_NCCL
 	std::unique_ptr<CCudaDistributedCommunicator> ncclCommunicator = nullptr;
@@ -676,14 +647,14 @@ private:
 	CCudaDevice* captureCudaDevice( int deviceNumber, size_t memoryLimit );
 	CCudaDevice* captureSpecifiedCudaDevice( int deviceNumber, size_t memoryLimit, bool reuseDevice );
 
-	int alignXSizeForWarp( int xSize );
-	int getCudaTempMatrixMaxHeight( int matrixHeight, int matrixWidth );
-	void getCudaTaskGrid( int& blockCount, int& threadCount, int taskCount, int combineCount = 1 );
-	void getCudaTaskGrid2D( dim3& blockCount, dim3& threadCount, int height, int width, int _maxThreadCount = UINT_MAX );
-	void getCudaTaskGrid3D( dim3& blockCount, dim3& threadCount, int batchSize, int height, int width, int _maxThreadCount = UINT_MAX );
-	void getCudaTaskGrid2DMinYX( int minY, int minX, dim3& blockCount, dim3& threadCount, int height, int width, int _maxThreadCount = UINT_MAX );
+	int alignXSizeForWarp( int xSize ) const;
+	int getCudaTempMatrixMaxHeight( int matrixHeight, int matrixWidth ) const;
+	void getCudaTaskGrid( int& blockCount, int& threadCount, int taskCount, int combineCount = 1 ) const;
+	void getCudaTaskGrid2D( dim3& blockCount, dim3& threadCount, int height, int width, int _maxThreadCount = INT_MAX ) const;
+	void getCudaTaskGrid3D( dim3& blockCount, dim3& threadCount, int batchSize, int height, int width, int _maxThreadCount = INT_MAX ) const;
+	void getCudaTaskGrid2DMinYX( int minY, int minX, dim3& blockCount, dim3& threadCount, int height, int width, int _maxThreadCount = INT_MAX ) const;
 	void getCudaTaskGrid3DMinZYX( int minZ, int minY, int minX, dim3& blockCount, dim3& threadCount,
-		int batchSize, int height, int width, int _maxThreadCount = UINT_MAX );
+		int batchSize, int height, int width, int _maxThreadCount = INT_MAX ) const;
 
 	template<class T>
 	void transposeMatrixImpl( int batchSize, const CTypedMemoryHandle<const T>& firstHandle,

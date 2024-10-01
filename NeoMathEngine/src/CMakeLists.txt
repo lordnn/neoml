@@ -24,14 +24,13 @@ set(CPU_COMMON_SOURCES
     CPU/CpuMathEngineDnnTimeConv.cpp
     CPU/CpuMathEngine.cpp
     CPU/CpuMathEngineDnnDistributed.cpp
-    CPU/CpuMathEngineSmallMatricesMultiplyDesc.cpp
     CPU/CpuMathEngineVectorMath.cpp
     CrtAllocatedObject.cpp
     DllLoader.cpp
-    MathEngineDeviceStackAllocator.cpp
     MathEngineDnnDropout.cpp
     MathEngine.cpp
-    MathEngineHostStackAllocator.cpp
+    MathEngineStackAllocator.cpp
+    MemoryEngineMixin.cpp
     MemoryPool.cpp
     ThreadPool.cpp
     common.cpp
@@ -44,13 +43,13 @@ target_sources(${PROJECT_NAME}
     common.h
     MathEngineAllocator.h
     MathEngineCommon.h
-    MathEngineDeviceStackAllocator.h
     MathEngineDll.h
     MathEngineDnnConv.h
     MathEngineDnnDropout.h
     MathEngineDnnLrn.h
     MathEngineDnnPoolings.h
-    MathEngineHostStackAllocator.h
+    MathEngineStackAllocator.h
+    MemoryEngineMixin.h
     MemoryHandleInternal.h
     MemoryPool.h
     RawMemoryManager.h
@@ -64,7 +63,6 @@ target_sources(${PROJECT_NAME}
     CPU/CpuMathEngineDnnLstm.h
     CPU/CpuMathEngineDnnPooling.h
     CPU/CpuMathEnginePrivate.h
-    CPU/CpuMathEngineSmallMatricesMultiplyDesc.h
     CPU/CpuRandom.h
 
     CPU/MatrixMultiplyingInterleavedCommon/CpuMemoryHelper.h
@@ -104,7 +102,7 @@ set_target_properties( ${PROJECT_NAME} PROPERTIES
     UNITY_BUILD_MODE GROUP
 )
 set_property(SOURCE ${CPU_COMMON_SOURCES} PROPERTY UNITY_GROUP 1)
-set_property(SOURCE MathEngineDeviceStackAllocator.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
+set_property(SOURCE MathEngineStackAllocator.cpp PROPERTY SKIP_UNITY_BUILD_INCLUSION ON)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_14)
 
@@ -135,8 +133,15 @@ if(ANDROID OR LINUX)
     )
 endif()
 
+set(BUILD_ARCH  ${CMAKE_SYSTEM_PROCESSOR})
+# macOS cross-compilation
+if(USE_FINE_OBJECTS AND DEFINED CMAKE_OSX_ARCHITECTURES AND NOT "${CMAKE_OSX_ARCHITECTURES}" STREQUAL "")
+    set(BUILD_ARCH  ${CMAKE_OSX_ARCHITECTURES})
+endif()
+
 # CPU specific settings
-if((DARWIN AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm64.*") OR (ANDROID AND ANDROID_ABI MATCHES "^arm.*") OR (IOS AND IOS_ARCH MATCHES "^arm.*"))
+if((DARWIN AND BUILD_ARCH MATCHES "^arm64.*") OR (ANDROID AND ANDROID_ABI MATCHES "^arm.*") OR (IOS AND IOS_ARCH MATCHES "^arm.*"))
+    message(STATUS "USE ARM SOURCES")
     set(CPU_ARM_SOURCES
         CPU/arm/CpuArmMathEngineBlas.cpp
         CPU/arm/CpuArmMathEngineDnn.cpp
@@ -164,6 +169,7 @@ if((DARWIN AND CMAKE_SYSTEM_PROCESSOR MATCHES "^arm64.*") OR (ANDROID AND ANDROI
     source_group("CPU\\arm" REGULAR_EXPRESSION "CPU\/arm\/.*")
     target_include_directories(${PROJECT_NAME} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/CPU/arm>)
 else()
+    message(STATUS "USE X86 SOURCES")
     set(CPU_X86_SOURCES
         CPU/x86/CpuX86MathEngineBlas.cpp
         CPU/x86/CpuX86MathEngineBlasMkl.cpp
@@ -243,6 +249,7 @@ if((WIN32 OR LINUX) AND CMAKE_SIZEOF_VOID_P EQUAL 8)
     check_language(CUDA)
 
     if(CMAKE_CUDA_COMPILER)
+        message(STATUS "USE CUDA")
         # Using CUDA
         enable_language(CUDA)
         
@@ -353,7 +360,7 @@ if((WIN32 OR LINUX) AND CMAKE_SIZEOF_VOID_P EQUAL 8)
 elseif(IOS)
     # Apple metal
     if(NeoMathEngine_ENABLE_METAL)
-
+        message(STATUS "USE METAL")
         target_compile_definitions(${PROJECT_NAME} PRIVATE NEOML_USE_METAL)
 
         set(IOS_SOURCES
@@ -393,6 +400,7 @@ endif()
 
 if(NeoMathEngine_ENABLE_VULKAN)
     if(WIN32 OR ANDROID)
+        message(STATUS "USE VULKAN")
         # Vulkan
         if(USE_FINE_OBJECTS)
             set(ENV{VULKAN_SDK} ${FINE_ROOT}/ThirdParty/Vulkan/${CMAKE_HOST_SYSTEM_NAME})
@@ -481,7 +489,7 @@ endif()
 # SSE2
 if(WIN32 AND CMAKE_SIZEOF_VOID_P EQUAL 4)
     target_compile_options(${PROJECT_NAME} PRIVATE /arch:SSE2)
-elseif(((LINUX OR DARWIN) AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86.*") OR (ANDROID AND ANDROID_ABI MATCHES "^x86.*") OR (IOS_ARCH MATCHES "^x86.*"))
+elseif(((LINUX OR DARWIN) AND BUILD_ARCH MATCHES "x86.*") OR (ANDROID AND ANDROID_ABI MATCHES "^x86.*") OR (IOS_ARCH MATCHES "^x86.*"))
     target_compile_options(${PROJECT_NAME} PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-msse2>)
 endif()
 
@@ -491,8 +499,8 @@ if(ANDROID AND ANDROID_ABI STREQUAL "armeabi-v7a")
 endif()
 
 # MKL
-if(NOT ANDROID AND NOT IOS AND CMAKE_SYSTEM_PROCESSOR MATCHES "(x86.*)|(amd64)|(AMD64)")
-
+if(NOT ANDROID AND NOT IOS AND BUILD_ARCH MATCHES "(x86.*)|(amd64)|(AMD64)")
+    message(STATUS "USE MKL")
     if(USE_FINE_OBJECTS)
         set(ENV{MKLROOT} ${FINE_ROOT}/ThirdParty/MKL/${CMAKE_SYSTEM_NAME})
     endif()
@@ -529,6 +537,7 @@ configure_target(${PROJECT_NAME})
 
 # Install
 if(NeoMathEngine_INSTALL)
+    message(STATUS "NeoMathEngine INSTALL")
     if(USE_FINE_OBJECTS)
         fine_install(${PROJECT_NAME})
         if(WIN32 AND CMAKE_CUDA_COMPILER)

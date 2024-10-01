@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,13 +30,11 @@ __global__ void BlobMaxOverTimePoolingKernel( const CCudaMaxOverTimePoolingDescI
 	const CCudaBlobDesc& source = desc.Source;
 	const CCudaBlobDesc& result = desc.Result;
 
-	int bufferIndex = ( threadIdx.z * blockDim.y + threadIdx.y ) * blockDim.x + threadIdx.x;
-
 	const int objectSize = source.ObjectSize();
 	const int seqElemSize = source.BatchWidth() * objectSize;
 
-	int x;
-	int pos;
+	int x = 0;
+	int pos = 0;
 	if( !GetCudaTaskIndex2D( result.BlobSize(), desc.FilterLen, pos, x ) ) {
 		return;
 	}
@@ -46,7 +44,8 @@ __global__ void BlobMaxOverTimePoolingKernel( const CCudaMaxOverTimePoolingDescI
 	const int srcSeqNumEnd = seqNum * desc.StrideLen + desc.FilterLen;
 	int srcSeqNum = seqNum * desc.StrideLen + x;
 
-	CValueWithIndex& val = buf[bufferIndex];
+	CValueWithIndex& val = buf[( threadIdx.z * blockDim.y + threadIdx.y ) * blockDim.x + threadIdx.x];
+	// NOTE: all threads are not used in the current task, should not interfere in the reduce max or sum
 	val.Index = srcSeqNum;
 	val.Value = __ldg( sourceData + srcSeqNum * seqElemSize + srcPos );
 	srcSeqNum += blockDim.x;
@@ -74,13 +73,11 @@ __global__ void BlobMaxOverTimePoolingKernel( const CCudaMaxOverTimePoolingDescI
 	const CCudaBlobDesc& source = desc.Source;
 	const CCudaBlobDesc& result = desc.Result;
 
-	const int bufferIndex = ( threadIdx.z * blockDim.y + threadIdx.y ) * blockDim.x + threadIdx.x;
-
 	const int objectSize = source.ObjectSize();
 	const int seqElemSize = source.BatchWidth() * objectSize;
 
-	int x;
-	int pos;
+	int x = 0;
+	int pos = 0;
 	if( !GetCudaTaskIndex2D( result.BlobSize(), desc.FilterLen, pos, x ) ) {
 		return;
 	}
@@ -90,7 +87,8 @@ __global__ void BlobMaxOverTimePoolingKernel( const CCudaMaxOverTimePoolingDescI
 	const int srcSeqNumEnd = seqNum * desc.StrideLen + desc.FilterLen;
 	int srcSeqNum = seqNum * desc.StrideLen + x;
 
-	float& val = buffer[bufferIndex];
+	float& val = buffer[( threadIdx.z * blockDim.y + threadIdx.y ) * blockDim.x + threadIdx.x];
+	// NOTE: all threads are not used in the current task, should not interfere in the reduce max or sum
 	val = __ldg( sourceData + srcSeqNum * seqElemSize + srcPos );
 	srcSeqNum += blockDim.x;
 
@@ -104,14 +102,14 @@ __global__ void BlobMaxOverTimePoolingKernel( const CCudaMaxOverTimePoolingDescI
 	resultData[pos] = ReduceMaxXSharedBuffer( buffer );
 }
 
-struct CStoreSet {
+struct CStoreSet final {
 	__device__ void Execute( float& acc, const float& value )
 	{
 		acc = value;
 	}
 };
 
-struct CStoreAtomicAdd {
+struct CStoreAtomicAdd final {
 	__device__ void Execute( float& acc, const float& value )
 	{
 		atomicAdd( &acc, value );
@@ -126,8 +124,8 @@ __global__ void BlobMaxOverTimePoolingBackwardKernel( Store store, const CCudaMa
 	const CCudaBlobDesc& source = desc.Source;
 	const CCudaBlobDesc& result = desc.Result;
 
-	int index;
-	int step;
+	int index = 0;
+	int step = 0;
 	const int count = GetCudaTaskCountAndIndex( result.BlobSize(), BlobMaxOverTimePoolingBackwardCombine, index, step );
 
 	const int objectSize = source.ObjectSize();

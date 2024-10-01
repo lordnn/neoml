@@ -1,4 +1,4 @@
-/* Copyright © 2017-2021 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -16,14 +16,14 @@ limitations under the License.
 #include "../common.h"
 #pragma hdrstop
 
-#include <algorithm>
-
 #include "GatherOperator.h"
 #include "NeoOnnxCheck.h"
 
 #include "onnx.pb.h"
 
 #include <NeoML/Dnn/Layers/Onnx/OnnxGatherLayer.h>
+
+using namespace NeoML;
 
 namespace NeoOnnx {
 
@@ -55,7 +55,7 @@ void CGatherOperator::AddLayers( const CTensorArray& inputs, CDnn& dnn, CTensorA
 	CPtr<const CTensorBase> data = inputs[0];
 	CTensorLayout dataLayout;
 	for( int i = 0; i < data->DimCount(); ++i ) {
-		dataLayout.Add( static_cast<TBlobDim>( std::max( 0, indices->DimCount() - 1 ) + i ) );
+		dataLayout.Add( static_cast<TBlobDim>( max( 0, indices->DimCount() - 1 ) + i ) );
 	}
 	if( axis != 0 ) {
 		std::swap( dataLayout[0], dataLayout[axis] );

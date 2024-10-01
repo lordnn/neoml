@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,14 +21,6 @@ limitations under the License.
 
 namespace NeoML {
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
-
-CTiedEmbeddingsLayer::CTiedEmbeddingsLayer( IMathEngine& mathEngine ) :
-	CBaseLayer( mathEngine, "CTiedEmbeddingsLayer", true ),
-	channelIndex( 0 )
-{
-}
-
 void CTiedEmbeddingsLayer::SetChannelIndex( int val )
 {
 	NeoAssert( val >= 0 );
@@ -36,29 +28,33 @@ void CTiedEmbeddingsLayer::SetChannelIndex( int val )
 	channelIndex = val;
 }
 
-static const int CnnTiedEmbeddingsLayerVersion = 2000;
+constexpr int TiedEmbeddingsLayerVersion = 2001;
 
 void CTiedEmbeddingsLayer::Serialize( CArchive& archive )
 {
-	archive.SerializeVersion( CnnTiedEmbeddingsLayerVersion, CDnn::ArchiveMinSupportedVersion );
+	const int version = archive.SerializeVersion( TiedEmbeddingsLayerVersion, CDnn::ArchiveMinSupportedVersion );
 	CBaseLayer::Serialize( archive );
 
-	archive.Serialize( embeddingsLayerName );
+	if (version < 2001 && archive.IsLoading()) {
+		CString embeddingLayerName;
+		archive.Serialize(embeddingLayerName);
+		embeddingPath = { embeddingLayerName };
+	}
+	else {
+		archive.Serialize(embeddingPath);
+	}
+
 	archive.Serialize( channelIndex );
 }
 
 void CTiedEmbeddingsLayer::Reshape()
 {
 	CheckInputs();
+	const CMultichannelLookupLayer* embeddingsLayer = getLookUpLayer();
 
-	CheckLayerArchitecture( GetDnn()->HasLayer( embeddingsLayerName ),
-		"Network does not contain embeddings layer with that name." );
-	const CMultichannelLookupLayer* embeddingsLayer = dynamic_cast<CMultichannelLookupLayer*>(
-		GetDnn()->GetLayer( embeddingsLayerName ).Ptr() );
 	CheckLayerArchitecture( embeddingsLayer != 0, "The layer is not an embedding layer." );
 
-	const int embeddingsChannelsCount = CheckCast<CMultichannelLookupLayer>(
-		GetDnn()->GetLayer( embeddingsLayerName ) )->GetDimensions().Size();
+	const int embeddingsChannelsCount = embeddingsLayer->GetDimensions().Size();
 	CheckLayerArchitecture( channelIndex < embeddingsChannelsCount,
 		"Wrong channgel index for embeddings" );
 
@@ -129,9 +125,7 @@ void CTiedEmbeddingsLayer::LearnOnce()
 		diffBlob->Clear();
 	}
 
-	CMultichannelLookupLayer* embeddingsLayer =
-		CheckCast<CMultichannelLookupLayer>( GetDnn()->GetLayer( embeddingsLayerName ) );
-
+	const CMultichannelLookupLayer* embeddingsLayer = getLookUpLayer();
 	CObjectArray<CDnnBlob> totalDiffBlobs;
 	const int channelsCount = embeddingsLayer->GetDimensions().Size();
 	for( int i = 0; i < channelsCount; i++ ) {
@@ -144,7 +138,7 @@ void CTiedEmbeddingsLayer::LearnOnce()
 		}
 	}
 
-	GetDnn()->GetSolver()->AddDiff( embeddingsLayer, totalDiffBlobs, true );
+	GetDnn()->GetSolver()->AddDiff( embeddingsLayer, totalDiffBlobs, /*sharedWeights*/true );
 }
 
 // Embeddings matrix
@@ -152,18 +146,26 @@ const CDnnBlob* CTiedEmbeddingsLayer::getEmbeddingsTable() const
 {
 	NeoAssert( channelIndex >= 0 );
 
-	const CMultichannelLookupLayer* embeddingsLayer =
-		CheckCast<CMultichannelLookupLayer>( GetDnn()->GetLayer( embeddingsLayerName ) );
-	return embeddingsLayer->GetEmbeddings( channelIndex );
+	return getLookUpLayer()->GetEmbeddings( channelIndex );
 }
 
-CLayerWrapper<CTiedEmbeddingsLayer> TiedEmbeddings( const char* name, int channel )
+const CMultichannelLookupLayer* CTiedEmbeddingsLayer::getLookUpLayer() const
 {
-	return CLayerWrapper<CTiedEmbeddingsLayer>( "TiedEmbeddings", [=]( CTiedEmbeddingsLayer* result ) {
-		result->SetEmbeddingsLayerName( name );
-		result->SetChannelIndex( channel );
-	} );
+	const CMultichannelLookupLayer* embeddingsLayer
+		= CheckCast<CMultichannelLookupLayer>( GetDnn()->GetLayer( embeddingPath ).Ptr() );
+	return embeddingsLayer;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////
+CLayerWrapper<CTiedEmbeddingsLayer> TiedEmbeddings( const char* name, int channel, CArray<CString>&& embeddingPath )
+{
+	return CLayerWrapper<CTiedEmbeddingsLayer>( "TiedEmbeddings",
+		[=, path=std::move( embeddingPath )]( CTiedEmbeddingsLayer* result )
+		{
+			result->SetEmbeddingsLayerName( name );
+			result->SetChannelIndex( channel );
+			result->SetEmbeddingsLayerPath( path );
+		}
+	);
+}
+
 } // namespace NeoML

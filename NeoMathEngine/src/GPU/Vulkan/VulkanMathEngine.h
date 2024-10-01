@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -20,13 +20,12 @@ limitations under the License.
 #ifdef NEOML_USE_VULKAN
 
 #include <vector>
-#include <mutex>
 #include <memory>
 #include <vulkan/vulkan.h>
 #include <NeoMathEngine/NeoMathEngine.h>
 #include <MathEngineAllocator.h>
 #include <VulkanImage.h>
-#include <RawMemoryManager.h>
+#include <MemoryEngineMixin.h>
 #include <PerformanceCountersDefault.h>
 #include <DllLoader.h>
 
@@ -39,10 +38,7 @@ struct CVulkanDevice;
 struct CVulkanRleConvolutionDesc;
 class CVulkanCommandQueue;
 class CVulkanShaderLoader;
-class CDeviceStackAllocator;
-class CHostStackAllocator;
 class CVulkanImage;
-class CMemoryPool;
 
 // Adds the information about available vulkan devices into the result array
 // Returns true if at least one device has been added
@@ -51,28 +47,17 @@ bool LoadVulkanEngineInfo( const CVulkanDll& dll, std::vector< CMathEngineInfo, 
 //------------------------------------------------------------------------------------------------------------
 
 // The math engine on vulkan
-class CVulkanMathEngine : public IMathEngine, public IRawMemoryManager {
+class CVulkanMathEngine : public CMemoryEngineMixin, public IRawMemoryManager {
 public:
 	CVulkanMathEngine( std::unique_ptr<const CVulkanDevice>& device, size_t memoryLimit );
 	~CVulkanMathEngine() override;
 
 	// IMathEngine interface methods
 	TMathEngineType GetType() const override { return MET_Vulkan; }
-	void SetReuseMemoryMode( bool enable ) override;
-	CMemoryHandle HeapAlloc( size_t count ) override;
-	void HeapFree( const CMemoryHandle& handle ) override;
-	CMemoryHandle StackAlloc( size_t count ) override;
-	void StackFree( const CMemoryHandle& handle ) override;
-	size_t GetFreeMemorySize() const override;
-	size_t GetPeakMemoryUsage() const override;
-	size_t GetMemoryInPools() const override;
-	void CleanUp() override;
-	void* GetBuffer( const CMemoryHandle& handle, size_t pos, size_t size, bool exchange ) override;
-	void ReleaseBuffer( const CMemoryHandle& handle, void* ptr, bool exchange ) override;
+	void GetMathEngineInfo( CMathEngineInfo& info ) const override;
+
 	void DataExchangeRaw( const CMemoryHandle& handle, const void* data, size_t size ) override;
 	void DataExchangeRaw( void* data, const CMemoryHandle& handle, size_t size ) override;
-	CMemoryHandle CopyFrom( const CMemoryHandle& handle, size_t size ) override;
-	void GetMathEngineInfo( CMathEngineInfo& info ) const override;
 
 	// IVectorMathematicsEngine interface methods
 	void VectorFill( const CFloatHandle& result, float value, int vectorSize ) override;
@@ -359,11 +344,9 @@ public:
 		const CConstFloatHandle& firstHandle, int firstSize, const CLookupVector& secondVector ) override;
 	void MultiplyMatrixByTransposedMatrix( const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, int firstRowSize, const CConstFloatHandle& secondHandle, int secondHeight, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplySparseMatrixByTransposedMatrix( int firstHeight, int firstWidth, int secondHeight,
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixBySparseMatrix( int firstHeight, int firstWidth, int secondWidth,
@@ -377,11 +360,9 @@ public:
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixByMatrixAndAdd( const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
 		int firstRowSize, const CConstFloatHandle& secondHandle, int secondWidth, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyTransposedMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyDiagMatrixByMatrix( const CConstFloatHandle& firstHandle, int firstSize,
 		const CConstFloatHandle& secondHandle, int secondWidth,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -390,8 +371,7 @@ public:
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondWidth,
-		const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) override;
+		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void BatchMultiplyMatrixByDiagMatrix( int batchSize, const CConstFloatHandle& firstHandle, int height,
 		int width, int firstMatrixOffset, const CConstFloatHandle& secondHandle, int secondMatrixOffset,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -471,12 +451,6 @@ public:
 	void BlobChannelwiseConvolutionLearnAdd( const CChannelwiseConvolutionDesc& convDesc,
 		const CConstFloatHandle& input, const CConstFloatHandle& outputDiff, const CFloatHandle& filterDiff,
 		const CFloatHandle* freeTermDiff ) override;
-
-	CSmallMatricesMultiplyDesc* InitSmallMatricesMultiplyDesc(
-		int /*firstHeight*/, int /*firstWidth*/, int /*secondWidth*/, int /*secondRowSize*/, int /*resultWidth*/,
-		bool /*resultAdd*/, bool /*trans1*/, bool /*trans2*/ ) const override
-	{ return new CSmallMatricesMultiplyDesc{}; }
-
 	CGlobalMaxPoolingDesc* InitGlobalMaxPooling( const CBlobDesc& source, const CBlobDesc& maxIndices,
 		const CBlobDesc& result ) override;
 	void BlobGlobalMaxPooling( const CGlobalMaxPoolingDesc& desc,
@@ -620,14 +594,12 @@ public:
 		const CConstFloatHandle& expandFilter, const CConstFloatHandle* expandFreeTerm,
 		TActivationFunction expandActivation, float expandReluParam, const CConstFloatHandle& channelwiseFilter,
 		const CConstFloatHandle* channelwiseFreeTerm, TActivationFunction channelwiseActivation,
-		float channelwiseReluParam, const CFloatHandle& outputHandle,
-		const CSmallMatricesMultiplyDescsArray* descs = nullptr ) override;
+		float channelwiseReluParam, const CFloatHandle& outputHandle ) override;
 	void MobileNetV3PostSEBlock( const CBlobDesc& channelwiseOutputDesc, int outputChannels,
 		const CConstFloatHandle& channelwiseOutputHandle, const CConstFloatHandle& squeezeAndExciteHandle,
 		const CConstFloatHandle* residualHandle, TActivationFunction activation, float reluParam,
 		const CConstFloatHandle& downFilterHandle, const CConstFloatHandle* downFreeTermHandle,
-		const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* descs = nullptr ) override;
-	CSmallMatricesMultiplyDescsArray* InitSmallMatricesMultiplyDescsArray() override { return new CSmallMatricesMultiplyDescsArray{}; }
+		const CFloatHandle& outputHandle ) override;
 	// Rowwise computation is ineffective on GPUs
 	CRowwiseOperationDesc* InitRowwiseActivation( const CActivationDesc& ) override
 		{ ASSERT_EXPR( false ); return nullptr; }
@@ -651,7 +623,8 @@ public:
 	void RowwiseExecute( const CBlobDesc&, CRowwiseOperationDesc**, int, const CFloatHandle&,
 		const CFloatHandle& ) override { ASSERT_EXPR( false ); }
 
-	IPerformanceCounters* CreatePerformanceCounters() const override { 	return new CPerformanceCountersDefault(); }
+	IPerformanceCounters* CreatePerformanceCounters( bool ) const override { return new CPerformanceCountersDefault(); }
+	// For Distributed only
 	void AllReduce( const CFloatHandle& /*handle*/, int /*size*/ ) override {};
 	void Broadcast( const CFloatHandle& /*handle*/, int /*size*/, int /*root*/ ) override {};
 
@@ -660,15 +633,13 @@ protected:
 	CMemoryHandle Alloc( size_t size ) override;
 	void Free( const CMemoryHandle& handle ) override;
 
+	void CleanUpSpecial() override;
+
 private:
 	CDllLoader dllLoader; // vulkan dll wrapper
-	mutable std::mutex mutex; // protecting the data below from non-thread-safe use
 	std::unique_ptr<const CVulkanDevice> device; // device descriptor
 	std::unique_ptr<CVulkanShaderLoader> shaderLoader; // shader loader
 	std::unique_ptr<CVulkanCommandQueue> commandQueue; // shader execution queue
-	std::unique_ptr<CMemoryPool> memoryPool; // memory manager
-	std::unique_ptr<CDeviceStackAllocator> deviceStackAllocator; // stack allocator for GPU memory
-	std::unique_ptr<CHostStackAllocator> hostStackAllocator; // stack allocator for host memory
 	std::vector< CVulkanImage*, CrtAllocator<CVulkanImage*> > tmpImages; // temporary images
 
 	IMathEngine& mathEngine() { IMathEngine* engine = this; return *engine; }

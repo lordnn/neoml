@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -35,6 +35,10 @@ namespace NeoML {
 class NEOML_API CDnnBlob : public IObject {
 public:
 	explicit CDnnBlob( IMathEngine& mathEngine );
+
+	// Move other's Blob state to this Blob and transfer its data (if dataOwned) to this thread
+	CDnnBlob( CDnnBlob&& other );
+	CDnnBlob& operator=( CDnnBlob&& other );
 
 	// Create blobs of various kinds
 	static CDnnBlob* CreateVector(IMathEngine& mathEngine, TBlobType type, int vectorSize);
@@ -136,6 +140,11 @@ public:
 	// Copies the contents from another blob
 	void CopyFrom(const CDnnBlob* other);
 
+	// Transfers CDnnBlob data from other thread owner to this thread.
+	// By default memory underneath each blob is associated with the thread on which its allocation has occurred.
+	// This method switches this association to the calling thread.
+	void TransferDataToThisThread();
+
 	// Elementwise adds a blob of the same dimensions
 	void Add(const CDnnBlob* other);
 	// Clears the contents
@@ -215,12 +224,19 @@ protected:
 	}
 
 private:
+	// Math Engine owner
 	IMathEngine& mathEngine;
+	// Actual typed sizes description of the allocated data storage
 	CBlobDesc desc;
+	// Pointer to the allocated data storage
 	CMemoryHandle data;
+	// Ownership of the `data`, it means that it has full access to write and to free the allocated data storage
+	// Either `dataOwned` is true and `parent` is 0
+	// Or `dataOwned` is false and `parent` is pointer to blob that owns the allocated data storage
 	bool dataOwned;
-
-	CPtr<CDnnBlob> parent;	// parent blob
+	// Pointer to blob with data for sequential recurent mode or reference dnn's paramBlobs
+	CPtr<CDnnBlob> parent;
+	// Offset in `parent` blob for sequential recurent mode, move window by BatchLength of the parent blob
 	int parentPos;
 
 	void initializeBlob(TBlobType _type, int batchLength, int batchWidth, int listSize, int height, int width,

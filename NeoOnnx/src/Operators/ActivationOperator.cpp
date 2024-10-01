@@ -1,4 +1,4 @@
-/* Copyright © 2017-2021 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ limitations under the License.
 #include "ActivationOperator.h"
 #include "NeoOnnxCheck.h"
 
+using namespace NeoML;
+
 namespace NeoOnnx {
 
 CActivationOperatorBase::CActivationOperatorBase( const onnx::NodeProto& onnxNode, int opsetVersion,
@@ -33,7 +35,6 @@ CActivationOperatorBase::CActivationOperatorBase( const onnx::NodeProto& onnxNod
 void CActivationOperatorBase::AddLayers( const CTensorArray& inputs, CDnn& dnn, CTensorArray& outputs ) const
 {
 	CheckNeoOnnxSupport( inputs[0] != nullptr, "Missing input", *this );
-	CheckNoShapeInputs( inputs );
 
 	CPtr<const CUserTensor> userInput = AsUserTensor( *inputs[0], Name() + "_Source", dnn );
 

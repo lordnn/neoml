@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -53,7 +53,7 @@ void CCompositeSourceLayer::SetBlob(CDnnBlob* _blob)
 }
 
 void CCompositeSourceLayer::SetDiffBlob(CDnnBlob* blob)
-{ 
+{
 	if( GetDnn()->IsRecurrentMode() && blob->GetBatchLength() > 1 ) {
 		diffBlob = CDnnBlob::CreateWindowBlob( blob );
 	} else {
@@ -127,7 +127,7 @@ void CCompositeSinkLayer::RunOnce()
 }
 
 void CCompositeSinkLayer::SetDiffBlob(CDnnBlob* blob)
-{ 
+{
 	if( GetDnn()->IsRecurrentMode() && blob->GetBatchLength() > 1 ) {
 		diffBlob = CDnnBlob::CreateWindowBlob( blob );
 	} else {
@@ -202,6 +202,22 @@ CPtr<const CBaseLayer> CCompositeLayer::GetLayer(const char* name) const
 	return layerMap.Get(name);
 }
 
+CPtr<CBaseLayer> CCompositeLayer::GetLayer(const CArray<CString>& path)
+{
+	CPtr<CCompositeLayer> currComp = this;
+	for(int i = 0; i < path.Size() - 1; ++i ) {
+		CheckArchitecture(currComp->layerMap.Has(path[i]), path[i], "layer is not in this composite layer");
+		currComp = CheckCast<CCompositeLayer>( currComp->GetLayer(path[i]).Ptr() );
+	}
+	CheckArchitecture(currComp->HasLayer(path.Last()), path.Last(), "layer is not contained by this path");
+	return currComp->GetLayer(path.Last());
+}
+
+CPtr<const CBaseLayer> CCompositeLayer::GetLayer(const CArray<CString>& path) const
+{
+	return const_cast<CCompositeLayer*>(this)->GetLayer(path);
+}
+
 bool CCompositeLayer::HasLayer(const char* name) const
 {
 	return layerMap.Has(name);
@@ -218,6 +234,7 @@ void CCompositeLayer::AddLayerImpl(CBaseLayer& layer)
 	if(internalDnn != 0) {
 		internalDnn->AddLayer(layer);
 	}
+	ForceReshape();
 }
 
 void CCompositeLayer::DeleteLayerImpl(CBaseLayer& layer)
@@ -234,6 +251,7 @@ void CCompositeLayer::DeleteLayerImpl(CBaseLayer& layer)
 			break;
 		}
 	}
+	ForceReshape();
 }
 
 CString CCompositeLayer::getSourceName(int num) const
@@ -261,6 +279,11 @@ void CCompositeLayer::createSources()
 		internalDnn->AddLayer(*newSource);
 		// Set the ForceBackward flags as needed for the composite layer
 		newSource->SetBackwardForced(IsBackwardNeeded());
+	}
+	// Update ForceBackward flags for sources which have already been created
+	int sourceIndex = 0;
+	while( sourceIndex < sources.Size() && sources[sourceIndex]->GetBackwardForced() != IsBackwardNeeded() ) {
+		sources[sourceIndex++]->SetBackwardForced( IsBackwardNeeded() );
 	}
 }
 
@@ -459,7 +482,7 @@ void CCompositeLayer::SetInternalDnnParams()
 	internalDnn->SetLogFrequency(GetDnn()->GetLogFrequency());
 	internalDnn->RequestReshape(forcedReshape);
 	// Switch learning on or off
-	if(IsLearningEnabled()) {
+	if( GetDnn()->IsLearningEnabled() ) {
 		internalDnn->EnableLearning();
 	} else {
 		internalDnn->DisableLearning();
@@ -476,10 +499,11 @@ size_t CCompositeLayer::GetOutputBlobsSize() const
 	return result;
 }
 
-void CCompositeLayer::CleanUp()
+void CCompositeLayer::CleanUp( bool totalCleanUp )
 {
+	CBaseLayer::CleanUp( totalCleanUp );
 	for( int i = 0; i < internalDnn->layers.Size(); i++ ) {
-		internalDnn->layers[i]->CleanUp();
+		internalDnn->layers[i]->CleanUp( totalCleanUp );
 	}
 }
 

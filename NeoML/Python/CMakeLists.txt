@@ -17,7 +17,7 @@ find_package(Python3 ${Python3_FIND_VERSION} EXACT COMPONENTS Interpreter Develo
 FetchContent_Declare(
     pybind11
     GIT_REPOSITORY https://github.com/pybind/pybind11.git
-    GIT_TAG v2.11.1
+    GIT_TAG v2.13.5
 )
 
 FetchContent_GetProperties(pybind11)
@@ -27,9 +27,16 @@ if(NOT pybind11_POPULATED)
 endif()
 
 # Build NeoML
-set(NeoML_INSTALL OFF CACHE BOOL "" FORCE)
-set(NeoML_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(NeoOnnx_BUILD OFF CACHE BOOL "" FORCE)
+set(NeoML_INSTALL         OFF  CACHE  BOOL  ""  FORCE)
+set(NeoML_BUILD_TESTS     OFF  CACHE  BOOL  ""  FORCE)
+set(NeoML_BUILD_SHARED    OFF  CACHE  BOOL  ""  FORCE)
+set(NeoOnnx_BUILD         ON   CACHE  BOOL  ""  FORCE)
+set(NeoOnnx_BUILD_SHARED  OFF  CACHE  BOOL  ""  FORCE)
+
+if(MSVC) # static linking the standard library
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
 add_subdirectory(${CMAKE_CURRENT_SOURCE_DIR}/.. ${CMAKE_BINARY_DIR}/NeoML)
 
 # Build python module
@@ -106,11 +113,12 @@ pybind11_add_module(PythonWrapper
     src/PyTransposeLayer.cpp
     src/PyUpsampling2DLayer.cpp
     src/PyWrapper.cpp
+    src/PyOnnx.cpp
 )
 
 target_include_directories(PythonWrapper PRIVATE src)
 
-target_link_libraries(PythonWrapper PRIVATE NeoML)
+target_link_libraries(PythonWrapper PRIVATE NeoML NeoOnnx)
 
 set_target_properties(PythonWrapper PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
 if(APPLE)
@@ -121,5 +129,8 @@ install(TARGETS PythonWrapper DESTINATION ${CMAKE_INSTALL_PREFIX})
 install(FILES $<TARGET_FILE:NeoMathEngine> $<TARGET_FILE:NeoML> DESTINATION ${CMAKE_INSTALL_PREFIX})
 if(TARGET NeoMathEngineAvx)
     install(FILES $<TARGET_FILE:NeoMathEngineAvx> DESTINATION ${CMAKE_INSTALL_PREFIX})
+endif()
+if(TARGET NeoOnnx AND NOT LINUX)
+    install(FILES $<TARGET_FILE:NeoOnnx> DESTINATION ${CMAKE_INSTALL_PREFIX})
 endif()
 

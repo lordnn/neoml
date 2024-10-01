@@ -1,4 +1,4 @@
-/* Copyright © 2017-2021 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -23,6 +23,8 @@ limitations under the License.
 
 #include <NeoML/Dnn/Layers/Onnx/OnnxCastLayer.h>
 
+using namespace NeoML;
+
 namespace NeoOnnx {
 
 CCastOperator::CCastOperator( const onnx::NodeProto& cast, int opsetVersion ) :
@@ -33,6 +35,7 @@ CCastOperator::CCastOperator( const onnx::NodeProto& cast, int opsetVersion ) :
 	// v6 - to attrbiute converted to integer instead of string
 	// v9 - string type support is added
 	// v13 - bloaf16 support is added
+	// v19 - float8 support and saturate flag are added
 	CheckNeoOnnxSupport( OpsetVersion >= 1 && OpsetVersion <= MaxOpsetVersion, "opset version", *this );
 
 	CheckOnnxProtocol( InputCount() == 1, "operator must have 1 input", *this );

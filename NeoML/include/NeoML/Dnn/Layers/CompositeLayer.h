@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -58,14 +58,16 @@ public:
 	int GetLayerCount() const override { return layers.Size(); }
 	void GetLayerList(CArray<const char*>& layerList) const override;
 	CPtr<CBaseLayer> GetLayer(const char* name) override;
+	CPtr<CBaseLayer> GetLayer(const CArray<CString>& path) override;
 	CPtr<const CBaseLayer> GetLayer(const char* name) const override;
+	CPtr<const CBaseLayer> GetLayer(const CArray<CString>& path) const override;
 	bool HasLayer(const char* name) const override;
 
 	// Returns the total size of the output blobs
 	size_t GetOutputBlobsSize() const override;
 
 	// Releases all temporary resources allocated for the layer
-	void CleanUp() override;
+	void CleanUp( bool totalCleanUp = false ) override;
 
 	// Returns the total size of trainable parameters
 	size_t GetTrainableParametersSize() const override;
@@ -86,6 +88,11 @@ protected:
 	void FilterLayerParams( float threshold ) override;
 	int BlobsForBackward() const override { return blobsForBackward; }
 	int BlobsForLearn() const override { return blobsForLearn; }
+	// It does not allocate outputBlobs in CBaseLayer in runOnce, because they are not used for inference.
+	// The outputBlob for CCompositeLayer are sinkLayer->GetBlob() of its internalDnn.
+	// NOTE: All class children do not allocate outputBlobs, for normal using cases it is ok
+	//       For special cases (like CRecurrentLayer) it should be reinitializated.
+	void AllocateOutputBlobs() override {}
 
 	// The network object for the internal layers
 	const CDnn* GetInternalDnn() const { return internalDnn; }
@@ -193,6 +200,7 @@ protected:
 	void Reshape() override;
 	void RunOnce() override;
 	void BackwardOnce() override;
+	// The outputBlobs are the source blobs
 	void AllocateOutputBlobs() override;
 	int BlobsForBackward() const override { return 0; }
 
@@ -232,6 +240,9 @@ protected:
 	void RunOnce() override;
 	void BackwardOnce() override;
 	int BlobsForBackward() const override { return 0; }
+	// It does not allocate outputBlobs in CBaseLayer in runOnce.
+	// Analogically to the CCompositeLayer, see its comment.
+	void AllocateOutputBlobs() override {}
 };
 
 } // namespace NeoML

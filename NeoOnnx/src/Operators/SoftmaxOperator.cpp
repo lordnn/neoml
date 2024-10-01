@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -21,6 +21,8 @@ limitations under the License.
 #include "TensorUtils.h"
 
 #include "onnx.pb.h"
+
+using namespace NeoML;
 
 namespace NeoOnnx {
 
@@ -47,7 +49,18 @@ bool CSoftmaxLayoutValidator::operator()( const CTensorLayout& layout ) const
 		}
 		return true;
 	}
-	return layout[axis] == BD_Channels || layout[axis] == BD_ListSize || layout[axis] == BD_BatchLength;
+
+	if( layout[axis] == BD_ListSize ) {
+		// Check compatibility with CSoftmaxLayer::NA_ListSize
+		// In this case no axes after ListSize may be used
+		for( const TBlobDim dim : layout ) {
+			if( dim > BD_ListSize ) {
+				return false;
+			}
+		}
+	}
+
+	return layout[axis] == BD_Channels || layout[axis] == BD_BatchLength;
 }
 
 CSoftmaxOperator::CSoftmaxOperator( const onnx::NodeProto& softmax, int opsetVersion ) :

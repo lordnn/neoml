@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -22,11 +22,11 @@ limitations under the License.
 namespace NeoML {
 
 template<class T>
-struct CCudaBlobDescArray {
-	int Count;
-	CCudaBlobDesc Descs[MaxBlobDescs];
-	T* Data[MaxBlobDescs];
-	int Widths[MaxBlobDescs];
+struct CCudaBlobDescArray final {
+	int Count = 0;
+	CCudaBlobDesc Descs[MaxBlobDescs]{};
+	T* Data[MaxBlobDescs]{};
+	int Widths[MaxBlobDescs]{};
 };
 
 const int BlobMergeByDimCombine = 16;
@@ -34,8 +34,8 @@ const int BlobMergeByDimCombine = 16;
 template<class T>
 __global__ void BlobMergeByDimKernel(int height, int width, CCudaBlobDescArray<T> from, CCudaBlobDesc to, T* toData, int heightNorm)
 {
-	int j;
-	int i;
+	int j = 0;
+	int i = 0;
 	if(!GetCudaTaskIndex2D(heightNorm, width, j, i)) {
 		return;
 	}
@@ -46,8 +46,7 @@ __global__ void BlobMergeByDimKernel(int height, int width, CCudaBlobDescArray<T
 		jLast = height;
 	}
 
-	int count = jLast - j;
-
+	const int count = jLast - j;
 	T* curToData = toData + j * width + i;
 
 	int fromIndex = 0;
@@ -57,7 +56,7 @@ __global__ void BlobMergeByDimKernel(int height, int width, CCudaBlobDescArray<T
 		++fromIndex;
 	}
 
-	int fromWidth = from.Widths[fromIndex];
+	const int fromWidth = from.Widths[fromIndex];
 	const T* fromData = from.Data[fromIndex] + j * fromWidth + fromI;
 
 	for(int k = 0; k < count; ++k) {
@@ -72,12 +71,11 @@ const int BlobSplitByDimCombine = 16;
 template<class T>
 __global__ void BlobSplitByDimKernel(int height, int width, CCudaBlobDesc from, const T* fromData, CCudaBlobDescArray<T> to, int heightNorm)
 {
-	int j;
-	int i;
+	int j = 0;
+	int i = 0;
 	if(!GetCudaTaskIndex2D(heightNorm, width, j, i)) {
 		return;
 	}
-
 
 	j *= BlobSplitByDimCombine;
 	int jLast = j + BlobSplitByDimCombine;
@@ -85,8 +83,7 @@ __global__ void BlobSplitByDimKernel(int height, int width, CCudaBlobDesc from, 
 		jLast = height;
 	}
 
-	int count = jLast - j;
-
+	const int count = jLast - j;
 	const T* curFromData = fromData + j * width + i;
 
 	int toIndex = 0;
@@ -96,7 +93,7 @@ __global__ void BlobSplitByDimKernel(int height, int width, CCudaBlobDesc from, 
 		++toIndex;
 	}
 
-	int toWidth = to.Widths[toIndex];
+	const int toWidth = to.Widths[toIndex];
 	T* toData = to.Data[toIndex] + j * toWidth + toI;
 	for(int k = 0; k < count; ++k) {
 		*toData = __ldg(curFromData);
@@ -111,9 +108,9 @@ __global__ void BlobResizeImageKernel( const CCudaBlobDesc from, const float* __
 	const int geom = to.Height() * to.Width();
 	const int totalChannels = to.Channels() * to.Depth();
 
-	int num;
-	int currGeom;
-	int ch;
+	int num = 0;
+	int currGeom = 0;
+	int ch = 0;
 	if( GetCudaTaskIndex3D( to.ObjectCount(), geom, totalChannels, num, currGeom, ch ) ) {
 		toData += num * totalChannels * geom + totalChannels * currGeom + ch;
 
@@ -142,26 +139,24 @@ const int BlobGetSubSequenceCombine = 16;
 __global__ void BlobGetSubSequenceKernel( CCudaBlobDesc from, const float* fromData, int* index, CCudaBlobDesc to,
 	float* toData, int startPos, bool isRev, int objectSizeNorm )
 {
-	int seqPos;
-	int seqNum;
-	int i;
-
+	int seqPos = 0;
+	int seqNum = 0;
+	int i = 0;
 	GetCudaTaskIndex3D( to.BatchLength(), to.BatchWidth(), objectSizeNorm, seqPos, seqNum, i );
 
 	if( seqPos >= to.BatchLength() || seqNum >= to.BatchWidth() ) {
 		return;
 	}
 
-	int objectSize = from.ObjectSize() * from.ListSize();
+	const int objectSize = from.ObjectSize() * from.ListSize();
+	const int fromSeqPos = isRev ? startPos - seqPos : startPos + seqPos;
+	const int fromPos = fromSeqPos * from.BatchWidth() + seqNum;
+	const float* const curFromData = fromData + fromPos * objectSize;
+	const int toPos = seqPos * to.BatchWidth() + seqNum;
+	float* const curToData = toData + toPos * objectSize;
 
-	int fromSeqPos = isRev ? startPos - seqPos : startPos + seqPos;
-	int fromPos = fromSeqPos * from.BatchWidth() + seqNum;
-	const float* curFromData = fromData + fromPos * objectSize;
-	int toPos = seqPos * to.BatchWidth() + seqNum;
-	float* curToData = toData + toPos * objectSize;
-
-	int step;
-	int count = GetCudaTaskCountAndIndex(objectSize, BlobGetSubSequenceCombine, i, step);
+	int step = 0;
+	const int count = GetCudaTaskCountAndIndex(objectSize, BlobGetSubSequenceCombine, i, step);
 
 	if(i == 0 && count > 0 && index != 0) {
 		index[toPos] = fromPos;
@@ -179,8 +174,8 @@ __global__ void Upsampling2DForwardKernel(
 	int batchSize, int inputHeight, int inputRowSize, const T* input,
 	int resultHeight, int resultRowSize, T* result )
 {
-	int resultI;
-	int resultJ;
+	int resultI = 0;
+	int resultJ = 0;
 	if( !GetCudaTaskIndex2D( resultHeight, resultRowSize, resultI, resultJ ) ) {
 		return;
 	}
@@ -199,8 +194,8 @@ __global__ void Upsampling2DBackwardKernel(
 	int batchSize, int inputHeight, int inputRowSize,
 	const float* input, int resultHeight, int resultRowSize, float* result )
 {
-	int inputI;
-	int inputJ;
+	int inputI = 0;
+	int inputJ = 0;
 	if( !GetCudaTaskIndex2D( inputHeight, inputRowSize, inputI, inputJ ) ) {
 		return;
 	}
@@ -217,7 +212,7 @@ __global__ void Upsampling2DBackwardKernel(
 
 static __global__ void BuildIntegerHistKernel( const int* numbers, int numbersCount, int* result )
 {
-	int index;
+	int index = 0;
 	if( GetCudaTaskIndex( numbersCount, index ) ) {
 		const int currNumber = numbers[index];
 		if( currNumber >= 0 ) {
@@ -230,13 +225,14 @@ const int MatrixRowsToVectorSquaredL2DistanceCombineCount = 16;
 __global__ void MatrixRowsToVectorSquaredL2DistanceKernel( const float* matrix, int matrixHeight,
 	int matrixWidth, const float* vector, float* result, int normalizedWidth )
 {
-	int rowIndex;
-	int colIndex;
+	int rowIndex = 0;
+	int colIndex = 0;
 	if( !GetCudaTaskIndex2D( matrixHeight, normalizedWidth, rowIndex, colIndex ) ) {
 		return;
 	}
-	int step;
-	int count = GetCudaTaskCountAndIndex( matrixWidth, MatrixRowsToVectorSquaredL2DistanceCombineCount,
+
+	int step = 0;
+	const int count = GetCudaTaskCountAndIndex( matrixWidth, MatrixRowsToVectorSquaredL2DistanceCombineCount,
 		colIndex, step );
 
 	if( count == 0 ) {
@@ -261,12 +257,12 @@ __global__ void MatrixRowsToVectorSquaredL2DistanceKernel( const float* matrix, 
 // BP_CDHW -> BP_HWDC
 inline __device__ int LegacyRepackIndex( int fromIndex, int channels, int height, int width )
 {
-	int x = fromIndex % width;
+	const int x = fromIndex % width;
 	fromIndex /= width;
-	int y = fromIndex % height;
+	const int y = fromIndex % height;
 	fromIndex /= height;
-	int c = fromIndex % channels;
-	int b = fromIndex / channels;
+	const int c = fromIndex % channels;
+	const int b = fromIndex / channels;
 	return c + channels * ( x + width * ( y + height * b ) );
 }
 
@@ -290,7 +286,6 @@ __global__ void ReorgKernel( const T *input, int width, int height, int nFilters
 	const int inputImage = index % batchSize;
 
 	const int outputNFilters = nFilters / ( stride * stride );
-
 	const int outputFilter = inputFilter % outputNFilters;
 	const int offset = inputFilter / outputNFilters;
 	const int outputColumn = inputColumn * stride + offset % stride;
@@ -401,7 +396,7 @@ __global__ void QrnnFPoolingKernel( bool reverse, int sequenceLength, int object
 	}
 
 	const int nextObjectOffset = reverse ? -objectSize : objectSize;
-	const int firstElemOffset = reverse ? objectSize * ( sequenceLength - 1 ) + index : index;
+	const int firstElemOffset = reverse ? ( objectSize * ( sequenceLength - 1 ) + index ) : index;
 	z += firstElemOffset;
 	f += firstElemOffset;
 	res += firstElemOffset;
@@ -433,7 +428,7 @@ __global__ void QrnnFPoolingBackwardKernel( bool reverse, int sequenceLength, in
 	}
 
 	const int nextObjectOffset = reverse ? -objectSize : objectSize;
-	const int firstElemOffset = reverse ? objectSize * ( sequenceLength - 1 ) + index : index;
+	const int firstElemOffset = reverse ? ( objectSize * ( sequenceLength - 1 ) + index ) : index;
 	z += firstElemOffset;
 	f += firstElemOffset;
 	out += firstElemOffset;
@@ -471,7 +466,7 @@ __global__ void QrnnIfPoolingKernel( bool reverse, int sequenceLength, int objec
 	}
 
 	const int nextObjectOffset = reverse ? -objectSize : objectSize;
-	const int firstElemOffset = reverse ? objectSize * ( sequenceLength - 1 ) + index : index;
+	const int firstElemOffset = reverse ? ( objectSize * ( sequenceLength - 1 ) + index ) : index;
 	z += firstElemOffset;
 	f += firstElemOffset;
 	i += firstElemOffset;
@@ -505,7 +500,7 @@ __global__ void QrnnIfPoolingBackwardKernel( bool reverse, int sequenceLength, i
 	}
 
 	const int nextObjectOffset = reverse ? -objectSize : objectSize;
-	const int firstElemOffset = reverse ? objectSize * ( sequenceLength - 1 ) + index : index;
+	const int firstElemOffset = reverse ? ( objectSize * ( sequenceLength - 1 ) + index ) : index;
 	z += firstElemOffset;
 	f += firstElemOffset;
 	i += firstElemOffset;
@@ -546,24 +541,25 @@ inline __device__ float cudaReLU( float x ) { return max( 0.f, x ); }
 __global__ void IndRnnRecurrentKernel( bool reverse, int sequenceLength, int batchSize, int objectSize, int activation,
 	const float* wx, const float* mask, const float* u, float* h )
 {
-	int batch, elem;
+	int batch = 0;
+	int elem = 0;
 	if( !GetCudaTaskIndex2D( batchSize, objectSize, batch, elem ) ) {
 		return;
 	}
 
 	// AF_Sigmoid == 5
 	// AF_ReLU == 2
-	float ( *applyActivation )( float ) = activation == 5 ? cudaSigmoid : cudaReLU;
+	float ( *applyActivation )( float ) = ( activation == 5 ) ? cudaSigmoid : cudaReLU;
 
 	const int inBatchOffset = batch * objectSize + elem;
 	const float dropout = mask == nullptr ? 1.f : mask[inBatchOffset];
 	const float weight = u[elem];
-
-	const int stepOffset = reverse ? -batchSize * objectSize : batchSize * objectSize;
+	const int totalSize = batchSize * objectSize;
+	const int stepOffset = reverse ? -totalSize : totalSize;
 
 	if( reverse ) {
-		wx += ( sequenceLength - 1 ) * batchSize * objectSize;
-		h += ( sequenceLength - 1 ) * batchSize * objectSize;
+		wx += ( sequenceLength - 1 ) * totalSize;
+		h += ( sequenceLength - 1 ) * totalSize;
 	}
 
 	wx += inBatchOffset;
@@ -587,25 +583,26 @@ inline __device__ float cudaReLUDiffOp( float out, float outDiff ) { return out 
 __global__ void IndRnnRecurrentBackwardKernel( bool reverse, int sequenceLength, int batchSize, int objectSize, int activation,
 	const float* mask, const float* u, const float* out, const float* outDiff, float* wxDiff )
 {
-	int batch, elem;
+	int batch = 0;
+	int elem = 0;
 	if( !GetCudaTaskIndex2D( batchSize, objectSize, batch, elem ) ) {
 		return;
 	}
 
 	// AF_Sigmoid == 5
 	// AF_ReLU == 2
-	float ( *activationDiffOp )( float, float ) = activation == 5 ? cudaSigmoidDiffOp : cudaReLUDiffOp;
+	float ( *activationDiffOp )( float, float ) = ( activation == 5 ) ? cudaSigmoidDiffOp : cudaReLUDiffOp;
 
 	const int inBatchOffset = batch * objectSize + elem;
 	const float dropout = mask == nullptr ? 1.f : mask[inBatchOffset];
 	const float weight = u[elem];
-
-	const int stepOffset = reverse ? -batchSize * objectSize : batchSize * objectSize;
+	const int totalSize = batchSize * objectSize;
+	const int stepOffset = reverse ? -totalSize : totalSize;
 
 	if( reverse ) {
-		out += ( sequenceLength - 1 ) * batchSize * objectSize;
-		wxDiff += ( sequenceLength - 1 ) * batchSize * objectSize;
-		outDiff += ( sequenceLength - 1 ) * batchSize * objectSize;
+		out += ( sequenceLength - 1 ) * totalSize;
+		wxDiff += ( sequenceLength - 1 ) * totalSize;
+		outDiff += ( sequenceLength - 1 ) * totalSize;
 	}
 
 	out += inBatchOffset;
@@ -633,24 +630,25 @@ __global__ void IndRnnRecurrentBackwardKernel( bool reverse, int sequenceLength,
 __global__ void IndRnnRecurrentLearnKernel( bool reverse, int sequenceLength, int batchSize, int objectSize, int activation,
 	const float* mask, const float* u, const float* out, const float* outDiff, float* uDiff )
 {
-	int batch, elem;
+	int batch = 0;
+	int elem = 0;
 	if( !GetCudaTaskIndex2D( batchSize, objectSize, batch, elem ) ) {
 		return;
 	}
 
 	// AF_Sigmoid == 5
 	// AF_ReLU == 2
-	float ( *activationDiffOp )( float, float ) = activation == 5 ? cudaSigmoidDiffOp : cudaReLUDiffOp;
+	float ( *activationDiffOp )( float, float ) = ( activation == 5 ) ? cudaSigmoidDiffOp : cudaReLUDiffOp;
 
 	const int inBatchOffset = batch * objectSize + elem;
 	const float dropout = mask == nullptr ? 1.f : mask[inBatchOffset];
 	const float weight = u[elem];
-
-	const int stepOffset = reverse ? -batchSize * objectSize : batchSize * objectSize;
+	const int totalSize = batchSize * objectSize;
+	const int stepOffset = reverse ? -totalSize : totalSize;
 
 	if( reverse ) {
-		out += ( sequenceLength - 1 ) * batchSize * objectSize;
-		outDiff += ( sequenceLength - 1 ) * batchSize * objectSize;
+		out += ( sequenceLength - 1 ) * totalSize;
+		outDiff += ( sequenceLength - 1 ) * totalSize;
 	}
 
 	out += inBatchOffset;
@@ -679,27 +677,29 @@ __global__ void IndRnnRecurrentLearnKernel( bool reverse, int sequenceLength, in
 __global__ void BertConvKernel( const float* data, const float* kernel, int seqLen, int batchSize, int numHeads,
 	int headSize, int kernelSize, float* output )
 {
-	const int taskCount = seqLen * batchSize * numHeads * headSize;
-	int index;
+	const int batchNumHeads = batchSize * numHeads;
+	const int taskCount = seqLen * batchNumHeads * headSize;
+
+	int index = 0;
 	if( !GetCudaTaskIndex( taskCount, index ) ) {
 		return;
 	}
 
 	const int pad = ( kernelSize - 1 ) / 2;
-	const int dataSeqStep = batchSize * numHeads * headSize;
+	const int dataSeqStep = batchNumHeads * headSize;
 
 	const int outputOffset = index;
 	const int h = index % headSize;
 	index /= headSize;
-	const int b = index % ( batchSize * numHeads );
-	const int seq = index / ( batchSize * numHeads );
 
+	const int b = index % batchNumHeads;
+	const int seq = index / batchNumHeads;
 	const int kernelOffset = index * kernelSize;
 
-	float res = 0.f;
 	const int kernelStart = max( 0, pad - seq );
 	const int kernelEnd = min( kernelSize, seqLen + pad - seq );
 	int dataOffset = h + b * headSize + ( seq - pad + kernelStart ) * dataSeqStep;
+	float res = 0.f;
 
 	for( int k = kernelStart; k < kernelEnd; ++k ) {
 		res += data[dataOffset] * kernel[kernelOffset + k];
@@ -712,28 +712,29 @@ __global__ void BertConvKernel( const float* data, const float* kernel, int seqL
 __global__ void BertConvBackwardDataKernel( const float* kernel, const float* outputDiff, int seqLen,
 	int batchSize, int numHeads, int headSize, int kernelSize, float* dataDiff )
 {
-	const int taskCount = seqLen * batchSize * numHeads * headSize;
-	int index;
+	const int batchNumHeads = batchSize * numHeads;
+	const int taskCount = seqLen * batchNumHeads * headSize;
+
+	int index = 0;
 	if( !GetCudaTaskIndex( taskCount, index ) ) {
 		return;
 	}
 
 	const int pad = ( kernelSize - 1 ) / 2;
-	const int outputSeqStep = batchSize * numHeads * headSize;
-	const int kernelSeqStep = batchSize * numHeads * kernelSize;
+	const int outputSeqStep = batchNumHeads * headSize;
+	const int kernelSeqStep = batchNumHeads * kernelSize;
 
 	const int dataOffset = index;
 	const int h = index % headSize;
 	index /= headSize;
-	const int b = index % ( batchSize * numHeads );
-	const int dataSeq = index / ( batchSize * numHeads );
-
-	float res = 0.f;
+	const int b = index % batchNumHeads;
+	const int dataSeq = index / batchNumHeads;
 
 	const int outputSeqStart = max( 0, dataSeq + pad - kernelSize + 1 );
 	const int outputSeqEnd = min( seqLen, dataSeq + pad + 1 );
 	int outputOffset = b * headSize + outputSeqStart * outputSeqStep + h;
 	int kernelOffset = b * kernelSize + outputSeqStart * kernelSeqStep;
+	float res = 0.f;
 
 	for( int outputSeq = outputSeqStart; outputSeq < outputSeqEnd; ++outputSeq ) {
 		const int posInKernel = dataSeq - ( outputSeq - pad );
@@ -748,8 +749,10 @@ __global__ void BertConvBackwardDataKernel( const float* kernel, const float* ou
 __global__ void BertConvBackwardKernelKernel( const float* data, const float* outputDiff, int seqLen,
 	int batchSize, int numHeads, int headSize, int kernelSize, float* kernelDiff )
 {
-	const int taskCount = seqLen * batchSize * numHeads * kernelSize;
-	int index;
+	const int batchNumHeads = batchSize * numHeads;
+	const int taskCount = seqLen * batchNumHeads * kernelSize;
+
+	int index = 0;
 	if( !GetCudaTaskIndex( taskCount, index ) ) {
 		return;
 	}
@@ -757,21 +760,21 @@ __global__ void BertConvBackwardKernelKernel( const float* data, const float* ou
 	const int kernelOffset = index;
 	const int posInKernel = index % kernelSize;
 	index /= kernelSize;
-	const int b = index % ( batchSize * numHeads );
-	const int outputSeq = index / ( batchSize * numHeads );
 
+	const int outputSeq = index / batchNumHeads;
 	const int pad = ( kernelSize - 1 ) / 2;
-	const int dataSeqStep = batchSize * numHeads * headSize;
-
 	const int dataSeq = ( outputSeq - pad ) + posInKernel;
+
 	if( dataSeq < 0 || dataSeq >= seqLen ) {
 		kernelDiff[kernelOffset] = 0.f;
 		return;
 	}
 
-	float res = 0.f;
+	const int b = index % batchNumHeads;
+	const int dataSeqStep = batchNumHeads * headSize;
 	int dataOffset = dataSeq * dataSeqStep + b * headSize;
 	int outputOffset = outputSeq * dataSeqStep + b * headSize;
+	float res = 0.f;
 
 	for( int h = 0; h < headSize; ++h ) {
 		res += data[dataOffset++] * outputDiff[outputOffset++];
@@ -785,7 +788,8 @@ __global__ void LinearInterpolationKernel( const float* data, float* result, int
 {
 	const int newSize = static_cast<int>( scaledAxis * scale );
 	const int taskCount = objectCount * newSize * objectSize;
-	int taskIndex;
+
+	int taskIndex = 0;
 	if( !GetCudaTaskIndex( taskCount, taskIndex ) ) {
 		return;
 	}
@@ -802,7 +806,7 @@ __global__ void LinearInterpolationKernel( const float* data, float* result, int
 			xOld = ( xNew + 0.5f ) / scale - 0.5f;
 			break;
 		case 1: // PytorchHalfPixel
-			xOld = ( newSize > 1 ) ? ( xNew + 0.5f ) / scale - 0.5f : 0.f;
+			xOld = ( newSize > 1 ) ? ( ( xNew + 0.5f ) / scale - 0.5f ) : 0.f;
 			break;
 		case 2: // AlignCorners
 			xOld = static_cast<float>( xNew * ( scaledAxis - 1 ) ) / ( newSize - 1 );
@@ -851,7 +855,8 @@ __global__ void scatterNDKernel( const T* updates, const int* indices, T* data, 
 	int updateCount, int indexDims, int objectSize )
 {
 	const int taskCount = updateCount * objectSize;
-	int index;
+
+	int index = 0;
 	if( !GetCudaTaskIndex( taskCount, index ) ) {
 		return;
 	}

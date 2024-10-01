@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -26,7 +26,6 @@ limitations under the License.
 @import std.vector;
 
 #include <MemoryPool.h>
-#include <MathEngineDeviceStackAllocator.h>
 
 @import Foundation;
 @import MetalKit;
@@ -64,91 +63,19 @@ bool LoadMetalEngineInfo( CMathEngineInfo& info )
 
 //----------------------------------------------------------------------------------------------------------------------------
 
-// Not using STL in headers
-class CMutex : public std::mutex {
-};
-
-//----------------------------------------------------------------------------------------------------------------------------
-
 const int MetalMemoryAlignment = 16;
 
 CMetalMathEngine::CMetalMathEngine( size_t memoryLimit ) :
-	queue( new CMetalCommandQueue() ),
-	memoryPool( new CMemoryPool( MIN( memoryLimit == 0 ? SIZE_MAX : memoryLimit, defineMemoryLimit() ), this, false ) ),
-	deviceStackAllocator( new CDeviceStackAllocator( *memoryPool, MetalMemoryAlignment ) ),
-	mutex( new CMutex() )
+	queue( new CMetalCommandQueue() )
 {
 	ASSERT_EXPR( queue->Create() );
+	memoryLimit = MIN( memoryLimit == 0 ? SIZE_MAX : memoryLimit, defineMemoryLimit() );
+
+	InitializeMemory( this, memoryLimit, MetalMemoryAlignment, /*reuse*/false, /*hostStack*/false );
 }
 
 CMetalMathEngine::~CMetalMathEngine()
 {
-}
-
-void CMetalMathEngine::SetReuseMemoryMode( bool enable )
-{
-	std::lock_guard<std::mutex> lock( *mutex );
-	memoryPool->SetReuseMemoryMode( enable );
-}
-
-CMemoryHandle CMetalMathEngine::HeapAlloc( size_t size )
-{
-	std::lock_guard<CMutex> lock( *mutex );
-	CMemoryHandle result = memoryPool->Alloc( size );
-	if( result.IsNull() ) {
-		THROW_MEMORY_EXCEPTION;
-	}
-
-	return result;
-}
-
-void CMetalMathEngine::HeapFree( const CMemoryHandle& handle )
-{
-	ASSERT_EXPR( handle.GetMathEngine() == this );
-
-	std::lock_guard<CMutex> lock( *mutex );
-	return memoryPool->Free( handle );
-}
-
-CMemoryHandle CMetalMathEngine::StackAlloc( size_t size )
-{
-	std::lock_guard<std::mutex> lock( *mutex );
-	CMemoryHandle result = deviceStackAllocator->Alloc( size );
-	if( result.IsNull() ) {
-		THROW_MEMORY_EXCEPTION;
-	}
-	return result;
-}
-
-void CMetalMathEngine::StackFree( const CMemoryHandle& ptr )
-{
-	std::lock_guard<std::mutex> lock( *mutex );
-	deviceStackAllocator->Free( ptr );
-}
-
-size_t CMetalMathEngine::GetFreeMemorySize() const
-{
-	std::lock_guard<CMutex> lock( *mutex );
-	return memoryPool->GetFreeMemorySize();
-}
-
-size_t CMetalMathEngine::GetPeakMemoryUsage() const
-{
-	std::lock_guard<std::mutex> lock( *mutex );
-	return memoryPool->GetPeakMemoryUsage();
-}
-
-size_t CMetalMathEngine::GetMemoryInPools() const
-{
-	std::lock_guard<std::mutex> lock( *mutex );
-	return memoryPool->GetMemoryInPools();
-}
-
-void CMetalMathEngine::CleanUp()
-{
-	std::lock_guard<CMutex> lock( *mutex );
-	deviceStackAllocator->CleanUp();
-	memoryPool->CleanUp();
 }
 
 static void* getBufferPtr( void* buffer, ptrdiff_t offset )
@@ -186,20 +113,6 @@ void CMetalMathEngine::DataExchangeRaw( void* data, const CMemoryHandle& handle,
 	queue->WaitCommandBuffer();
 	void* buf = getBufferPtr( GetRawAllocation( handle ), GetRawOffset( handle ) );
 	memcpy( data, buf, size );
-}
-
-CMemoryHandle CMetalMathEngine::CopyFrom( const CMemoryHandle& handle, size_t size )
-{
-	CMemoryHandle result = HeapAlloc( size );
-
-	IMathEngine* otherMathEngine = handle.GetMathEngine();
-	void* ptr = otherMathEngine->GetBuffer( handle, 0, size, true );
-
-	DataExchangeRaw( result, ptr, size );
-
-	otherMathEngine->ReleaseBuffer( handle, ptr, false );
-
-	return result;
 }
 
 void CMetalMathEngine::VectorCopy( const CFloatHandle& first, const CConstFloatHandle& second, int vectorSize )

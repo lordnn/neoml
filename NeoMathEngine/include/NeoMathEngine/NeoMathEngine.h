@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -29,10 +29,6 @@ limitations under the License.
 #include <climits>
 
 namespace NeoML {
-
-// Forward declarations
-struct CSmallMatricesMultiplyDesc;
-struct CSmallMatricesMultiplyDescsArray;
 
 // Supported coordinate modes for linear interpolation
 // The variables in formula:
@@ -532,12 +528,11 @@ public:
 	// Multiplies a matrix by another matrix, transposed; the result will be of firstHeight * secondHeight size
 	virtual void MultiplyMatrixByTransposedMatrix( const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, int firstRowSize, const CConstFloatHandle& secondHandle, int secondHeight, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) = 0;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) = 0;
 	// Multiplies matrices from two batches, stored one after another in firstHandle, secondHandle parameters
 	virtual void MultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle,
-		int resultBufferSize, const CSmallMatricesMultiplyDesc* desc = nullptr ) = 0;
+		int resultBufferSize ) = 0;
 
 	// Operations on sparse matrices
 
@@ -566,13 +561,11 @@ public:
 	// result = result + first(T) * second
 	virtual void MultiplyTransposedMatrixByMatrixAndAdd( const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth, int firstRowSize,
 		const CConstFloatHandle& secondHandle, int secondWidth, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) = 0;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) = 0;
 
 	// result[i] = first[i](T) * second[i] for i in [0, batchSize)
 	virtual void MultiplyTransposedMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) = 0;
+		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize ) = 0;
 
 	virtual void MultiplyDiagMatrixByMatrix(const CConstFloatHandle& firstHandle, int firstSize,
 		const CConstFloatHandle& secondHandle, int secondWidth,
@@ -586,8 +579,7 @@ public:
 	// Multiplies matrices from two batches, stored one after another in firstHandle, secondHandle parameters
 	virtual void MultiplyMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondWidth,
-		const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc = nullptr ) = 0;
+		const CFloatHandle& resultHandle, int resultBufferSize ) = 0;
 
 	// Multiplies batch of matrices height x width by a batch of diag matrces of size width
 	// Matrix offsets sets how many elements must be added to the pointer to move to the next matrix
@@ -668,8 +660,6 @@ struct NEOMATHENGINE_API CMaxOverTimePoolingDesc : public CCrtAllocatedObject { 
 struct NEOMATHENGINE_API CLrnDesc : public CCrtAllocatedObject { public: virtual ~CLrnDesc(); };
 struct NEOMATHENGINE_API CLstmDesc : public CCrtAllocatedObject { public: virtual ~CLstmDesc(); };
 struct NEOMATHENGINE_API CRowwiseOperationDesc : public CCrtAllocatedObject { public: virtual ~CRowwiseOperationDesc(); };
-struct NEOMATHENGINE_API CSmallMatricesMultiplyDesc : public CCrtAllocatedObject { public: virtual ~CSmallMatricesMultiplyDesc(); };
-struct NEOMATHENGINE_API CSmallMatricesMultiplyDescsArray : public CCrtAllocatedObject { public: virtual ~CSmallMatricesMultiplyDescsArray(); };
 
 //------------------------------------------------------------------------------------------------------------
 // RLE format
@@ -788,12 +778,6 @@ public:
 	virtual void BlobChannelwiseConvolutionLearnAdd( const CChannelwiseConvolutionDesc& desc,
 		const CConstFloatHandle& input, const CConstFloatHandle& outputDiff, const CFloatHandle& filterDiff,
 		const CFloatHandle* freeTermDiff ) = 0;
-
-	// Creates the descriptor of small matrices multiplication optimization
-	// The descriptor should be destroyed using the standard delete operator after use.
-	virtual CSmallMatricesMultiplyDesc* InitSmallMatricesMultiplyDesc(
-		int firstHeight, int firstWidth, int secondWidth, int secondRowSize, int resultWidth,
-		bool resultAdd, bool trans1, bool trans2 ) const = 0;
 
 	// GlobalMaxPooling
 	// The descriptor should be destroyed using the standard delete operator after use.
@@ -1090,15 +1074,12 @@ public:
 		const CConstFloatHandle& expandFilter, const CConstFloatHandle* expandFreeTerm,
 		TActivationFunction expandActivation, float expandReluParam, const CConstFloatHandle& channelwiseFilter,
 		const CConstFloatHandle* channelwiseFreeTerm, TActivationFunction channelwiseActivation,
-		float channelwiseReluParam, const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* descs = nullptr ) = 0;
+		float channelwiseReluParam, const CFloatHandle& outputHandle ) = 0;
 	virtual void MobileNetV3PostSEBlock( const CBlobDesc& channelwiseOutputDesc, int outputChannels,
 		const CConstFloatHandle& channelwiseOutputHandle, const CConstFloatHandle& squeezeAndExciteHandle,
 		const CConstFloatHandle* residualHandle, TActivationFunction activation, float reluParam,
 		const CConstFloatHandle& downFilterHandle, const CConstFloatHandle* downFreeTermHandle,
-		const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* descs = nullptr ) = 0;
-	// Creates the array of small matrices multiplication optimization descriptors.
-	// This object should be destroyed using the standard delete operator after use.
-	virtual CSmallMatricesMultiplyDescsArray* InitSmallMatricesMultiplyDescsArray() = 0;
+		const CFloatHandle& outputHandle ) = 0;
 
 	virtual CRowwiseOperationDesc* InitRowwiseActivation( const CActivationDesc& desc ) = 0;
 	virtual CRowwiseOperationDesc* InitRowwiseChWith1x1( int stride, const CConstFloatHandle& channelwiseFilter,
@@ -1168,22 +1149,40 @@ struct CMathEngineInfo {
 	CMathEngineInfo( TMathEngineType type, size_t availableMemory, int id ) : Type( type ), AvailableMemory( availableMemory ), Id( id ) { Name[0] = 0; }
 };
 
+//------------------------------------------------------------------------------------------------------------
+
 // CMathEngine class implements an engine to perform calculations on data specified by CMemoryHandle (CFloatHandle)
 class NEOMATHENGINE_API IMathEngine : public IDnnEngine {
 public:
 	virtual ~IMathEngine();
+
 	// Gets the device type
 	virtual TMathEngineType GetType() const = 0;
-	
 	// Gets the device information
 	virtual void GetMathEngineInfo( CMathEngineInfo& info ) const = 0;
+	// CMemoryEngineMixin has a delayed initialization after the device initialization
+	virtual bool IsInitialized() const = 0;
 
 	// Memory management
+
 	// Turns on and off the memory reuse mode
 	// In this mode, the allocated memory blocks will not be deleted on HeapFree() and may be used until CleanUp()
 	virtual void SetReuseMemoryMode( bool enable ) = 0;
+	virtual bool GetReuseMemoryMode() const = 0;
+
+	// Specialize the size threshold in bytes for the current thread, so
+	// memory blocks of a size <= this threshold would be allocated in buffers if 'reuse' mode enabled
+	// memory blocks of a size >  this threshold would be allocated in raw RAM memory (malloc/free)
+	virtual void SetThreadBufferMemoryThreshold( size_t threshold ) = 0;
+	// Get the memory blocks' sizes threshold for this thread
+	virtual size_t GetThreadBufferMemoryThreshold() const = 0;
+
 	virtual CMemoryHandle HeapAlloc( size_t count ) = 0;
 	virtual void HeapFree( const CMemoryHandle& handle ) = 0;
+
+	// Transfers memory handle from other thread owner to this thread.
+	// Caution! Do not use this method directly, only through the method CDnnBlob::TransferDataToThisThread()
+	virtual void TransferHandleToThisThread( const CMemoryHandle& handle, size_t size ) = 0;
 
 	// Allocates typed memory
 	template<class T>
@@ -1201,7 +1200,10 @@ public:
 
 	// Gets the peak memory usage achieved during processing
 	virtual size_t GetPeakMemoryUsage() const = 0;
-
+	// Reset the peak memory counter to the current memory usage value
+	virtual void ResetPeakMemoryUsage() = 0;
+	// The current memory usage size
+	virtual size_t GetCurrentMemoryUsage() const = 0;
 	// The current size of memory in the pools
 	virtual size_t GetMemoryInPools() const = 0;
 
@@ -1219,22 +1221,28 @@ public:
 
 	// Typed data exchange
 	template<class T>
-	void DataExchangeTyped( const CTypedMemoryHandle<T>& result, const T* source, size_t size ) { DataExchangeRaw( result, source, size * sizeof(T) ); }
+	void DataExchangeTyped( const CTypedMemoryHandle<T>& result, const T* source, size_t size )
+		{ DataExchangeRaw( result, source, size * sizeof(T) ); }
 	template<class T>
-	void DataExchangeTyped( T* result, const CTypedMemoryHandle<const T>& source, size_t size ) { DataExchangeRaw( result, source, size * sizeof(T) ); }
+	void DataExchangeTyped( T* result, const CTypedMemoryHandle<const T>& source, size_t size )
+		{ DataExchangeRaw( result, source, size * sizeof(T) ); }
 
 	// Creates a handle with data from another math engine
 	virtual CMemoryHandle CopyFrom( const CMemoryHandle& handle, size_t size ) = 0;
 
 	// Creates a object for aggregating statistics.
 	// This object should be destroyed using the standard delete operator after use.
-	virtual IPerformanceCounters* CreatePerformanceCounters() const = 0;
+	virtual IPerformanceCounters* CreatePerformanceCounters( bool isTimeOnly = false ) const = 0;
 
+	// For Distributed only
 	virtual CMathEngineDistributedInfo GetDistributedInfo() { return CMathEngineDistributedInfo(); }
 	virtual void AllReduce( const CFloatHandle& handle, int size ) = 0;
 	virtual void Broadcast( const CFloatHandle& handle, int size, int root ) = 0;
 	virtual void AbortDistributed() {};
-	virtual bool IsDistributed() { return false; }
+	virtual bool IsDistributed() const { return false; }
+
+protected:
+	virtual void CleanUpSpecial() = 0;
 };
 
 //------------------------------------------------------------------------------------------------------------
@@ -1297,10 +1305,10 @@ public:
 NEOMATHENGINE_API IGpuMathEngineManager* CreateGpuMathEngineManager();
 
 // Creates `count` cpu MathEngines connected via distributed communicator object
-NEOMATHENGINE_API void CreateDistributedCpuMathEngines( IMathEngine** mathEngines, int count );
+NEOMATHENGINE_API void CreateDistributedCpuMathEngines( IMathEngine** mathEngines, int count, size_t memoryLimit = 0 );
 // Creates `count` gpu MathEngines connected via distributed communicator object
 // i-th MathEngine placed on gpu with number devs[i]
-NEOMATHENGINE_API void CreateDistributedCudaMathEngines( IMathEngine** mathEngines, int devsCount, const int* cudaDevs );
+NEOMATHENGINE_API void CreateDistributedCudaMathEngines( IMathEngine** mathEngines, int devsCount, const int* cudaDevs, size_t memoryLimit = 0 );
 
 // Deinitialization function for NeoMathEngine library
 // It's recommended to call this function during the unload of the dynamic library

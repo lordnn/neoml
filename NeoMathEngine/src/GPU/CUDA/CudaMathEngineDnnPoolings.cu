@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -123,7 +123,7 @@ void CCudaMathEngine::BlobMeanPooling( const CMeanPoolingDesc& poolingDesc,
 	dim3 blockCount;
 	dim3 threadCount;
 
-	int totalChannels = result.Depth() * result.Channels();
+	const int totalChannels = result.Depth() * result.Channels();
 
 	getCudaTaskGrid3DMinZYX( 1, 1, 32, blockCount, threadCount,
 		result.ObjectCount(), result.Height() * result.Width(), totalChannels );
@@ -173,11 +173,11 @@ void CCudaMathEngine::BlobGlobalMaxOverTimePooling( const CGlobalMaxOverTimePool
 	const CCudaGlobalMaxOverTimePoolingDescInternal& desc = static_cast<const CCudaGlobalMaxOverTimePoolingDesc&>( poolingDesc ).Internal;
 	const CCudaBlobDesc& source = desc.Source;
 
-	int objectCount = source.BatchLength();
-	int objectSize = source.BlobSize() / objectCount;
+	const int objectCount = source.BatchLength();
+	const int objectSize = source.BlobSize() / objectCount;
 
-	int blockCount;
-	int threadCount;
+	int blockCount = 0;
+	int threadCount = 0;
 	getCudaTaskGrid( blockCount, threadCount, objectSize );
 
 	if( maxIndicesData == 0 ) {
@@ -201,8 +201,8 @@ void CCudaMathEngine::BlobGlobalMaxOverTimePoolingBackward( const CGlobalMaxOver
 
 	VectorFill( sourceDiff, 0, source.BlobSize() );
 
-	int blockCount;
-	int threadCount;
+	int blockCount = 0;
+	int threadCount = 0;
 	getCudaTaskGrid( blockCount, threadCount, result.BlobSize() );
 
 	BlobGlobalMaxOverTimePoolingBackwardKernel<<<blockCount, threadCount>>>( desc, GetRaw( resultDiff ), GetRaw( maxIndices ), GetRaw( sourceDiff ) );
@@ -319,8 +319,8 @@ void CCudaMathEngine::BlobGlobalMaxPoolingBackward( const CGlobalMaxPoolingDesc&
 	const int maxCount = result.Depth() * result.Height() * result.Width();
 	const int fullSize = result.ObjectCount() * maxCount * result.Channels();
 
-	int blockCount;
-	int threadCount;
+	int blockCount = 0;
+	int threadCount = 0;
 	getCudaTaskGrid( blockCount, threadCount, fullSize, BlobGlobalMaxPoolingBackwardCombine );
 
 	BlobGlobalMaxPoolingBackwardKernel<<<blockCount, threadCount>>>( desc, GetRaw( resultDiff ),
@@ -357,8 +357,8 @@ void CCudaMathEngine::Blob3dMaxPooling( const C3dMaxPoolingDesc& poolingDesc, co
 	const CCuda3dMaxPoolingDescInternal& desc = static_cast<const CCuda3dMaxPoolingDesc&>( poolingDesc ).Internal;
 	const CCudaBlobDesc& result = desc.Result;
 
-	dim3 blockCount;
-	dim3 threadCount;
+	dim3 blockCount = 0;
+	dim3 threadCount = 0;
 	getCudaTaskGrid3DMinZYX( 1, 1, 32, blockCount, threadCount, result.ObjectCount(),
 		result.Depth() * result.Height() * result.Width(), result.Channels() );
 
@@ -509,8 +509,8 @@ void CCudaMathEngine::BlobMaxOverTimePoolingBackward( const CMaxOverTimePoolingD
 	// Set diff to 0
 	VectorFill( sourceDiff, 0, source.BlobSize() );
 
-	int blockCount;
-	int threadCount;
+	int blockCount = 0;
+	int threadCount = 0;
 	getCudaTaskGrid( blockCount, threadCount, result.BlobSize(), BlobMaxOverTimePoolingBackwardCombine );
 
 	if( desc.StrideLen >= desc.FilterLen ) {

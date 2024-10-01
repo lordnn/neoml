@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -17,9 +17,8 @@ limitations under the License.
 
 #include <NeoMathEngine/NeoMathEngine.h>
 #include <NeoMathEngine/SimdMathEngine.h>
-#include <RawMemoryManager.h>
+#include <MemoryEngineMixin.h>
 #include <DllLoader.h>
-#include <mutex>
 #include <memory>
 #include <CpuMathEngineDnnDistributed.h>
 
@@ -30,12 +29,10 @@ struct CCommon2DPoolingDesc;
 struct CCommonMaxPoolingDesc;
 struct CCommon3dConvolutionDesc;
 struct CCommonChannelwiseConvolutionDesc;
-class CDeviceStackAllocator;
-class CMemoryPool;
 class ISimdMathEngine;
 
 // Math engine that uses a CPU for calculations
-class CCpuMathEngine : public IMathEngine, public IRawMemoryManager {
+class CCpuMathEngine : public CMemoryEngineMixin, public IRawMemoryManager {
 public:
 	CCpuMathEngine( size_t memoryLimit,
 		std::shared_ptr<CMultiThreadDistributedCommunicator> communicator = nullptr,
@@ -44,21 +41,12 @@ public:
 
 	// IMathEngine interface methods
 	TMathEngineType GetType() const override { return MET_Cpu; }
-	void SetReuseMemoryMode( bool enabled ) override;
-	CMemoryHandle HeapAlloc( size_t count ) override;
-	void HeapFree( const CMemoryHandle& handle ) override;
-	CMemoryHandle StackAlloc( size_t count ) override;
-	void StackFree( const CMemoryHandle& handle ) override;
-	size_t GetFreeMemorySize() const override;
-	size_t GetPeakMemoryUsage() const override;
-	size_t GetMemoryInPools() const override;
-	void CleanUp() override;
-	void* GetBuffer( const CMemoryHandle& handle, size_t pos, size_t size, bool exchange ) override;
-	void ReleaseBuffer( const CMemoryHandle& handle, void* ptr, bool exchange ) override;
+	void GetMathEngineInfo( CMathEngineInfo& info ) const override;
+
+	void* GetBuffer( const CMemoryHandle& handle, size_t pos, size_t size, bool exchange ) override; // specialize
+	void ReleaseBuffer( const CMemoryHandle& handle, void* ptr, bool exchange ) override; // specialize
 	void DataExchangeRaw( const CMemoryHandle& handle, const void* data, size_t size ) override;
 	void DataExchangeRaw( void* data, const CMemoryHandle& handle, size_t size ) override;
-	CMemoryHandle CopyFrom( const CMemoryHandle& handle, size_t size ) override;
-	void GetMathEngineInfo( CMathEngineInfo& info ) const override;
 
 	// IVectorMathEngine interface methods
 	void VectorFill( const CFloatHandle& result, float value, int vectorSize ) override;
@@ -341,11 +329,9 @@ public:
 		const CConstFloatHandle& firstHandle, int firstSize, const CLookupVector& secondVector ) override;
 	void MultiplyMatrixByTransposedMatrix( const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, int firstRowSize, const CConstFloatHandle& secondHandle, int secondHeight, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc ) override;
+		const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplySparseMatrixByTransposedMatrix( int firstHeight, int firstWidth, int secondHeight,
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixBySparseMatrix( int firstHeight, int firstWidth, int secondWidth,
@@ -359,11 +345,9 @@ public:
 		const CSparseMatrixDesc& firstDesc, const CConstFloatHandle& secondHandle, const CFloatHandle& resultHandle ) override;
 	void MultiplyTransposedMatrixByMatrixAndAdd( const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
 		int firstRowSize, const CConstFloatHandle& secondHandle, int secondWidth, int secondRowSize,
-		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc ) override;
+		const CFloatHandle& resultHandle, int resultRowSize, int resultBufferSize ) override;
 	void MultiplyTransposedMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight, int firstWidth,
-		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc ) override;
+		const CConstFloatHandle& secondHandle, int secondWidth, const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyDiagMatrixByMatrix( const CConstFloatHandle& firstHandle, int firstSize,
 		const CConstFloatHandle& secondHandle, int secondWidth,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -372,8 +356,7 @@ public:
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void MultiplyMatrixByMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
 		int firstWidth, const CConstFloatHandle& secondHandle, int secondWidth,
-		const CFloatHandle& resultHandle, int resultBufferSize,
-		const CSmallMatricesMultiplyDesc* desc ) override;
+		const CFloatHandle& resultHandle, int resultBufferSize ) override;
 	void BatchMultiplyMatrixByDiagMatrix( int batchSize, const CConstFloatHandle& firstHandle, int height,
 		int width, int firstMatrixOffset, const CConstFloatHandle& secondHandle, int secondMatrixOffset,
 		const CFloatHandle& resultHandle, int resultBufferSize ) override;
@@ -451,11 +434,6 @@ public:
 	void BlobChannelwiseConvolutionLearnAdd( const CChannelwiseConvolutionDesc& convDesc,
 		const CConstFloatHandle& input, const CConstFloatHandle& outputDiff, const CFloatHandle& filterDiff,
 		const CFloatHandle* freeTermDiff ) override;
-
-	CSmallMatricesMultiplyDesc* InitSmallMatricesMultiplyDesc(
-		int firstHeight, int firstWidth, int secondWidth, int secondRowSize, int resultWidth,
-		bool resultAdd, bool trans1, bool trans2 ) const override;
-
 	CGlobalMaxPoolingDesc* InitGlobalMaxPooling( const CBlobDesc& source, const CBlobDesc& maxIndices, const CBlobDesc& result ) override;
 	void BlobGlobalMaxPooling( const CGlobalMaxPoolingDesc& desc,
 		const CConstFloatHandle& source, const CIntHandle& maxIndices, const CFloatHandle& result ) override;
@@ -595,13 +573,12 @@ public:
 		const CConstFloatHandle& expandFilter, const CConstFloatHandle* expandFreeTerm,
 		TActivationFunction expandActivation, float expandReluParam, const CConstFloatHandle& channelwiseFilter,
 		const CConstFloatHandle* channelwiseFreeTerm, TActivationFunction channelwiseActivation,
-		float channelwiseReluParam, const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* ) override;
+		float channelwiseReluParam, const CFloatHandle& outputHandle ) override;
 	void MobileNetV3PostSEBlock( const CBlobDesc& channelwiseOutputDesc, int outputChannels,
 		const CConstFloatHandle& channelwiseOutputHandle, const CConstFloatHandle& squeezeAndExciteHandle,
 		const CConstFloatHandle* residualHandle, TActivationFunction activation, float reluParam,
 		const CConstFloatHandle& downFilterHandle, const CConstFloatHandle* downFreeTermHandle,
-		const CFloatHandle& outputHandle, const CSmallMatricesMultiplyDescsArray* ) override;
-	CSmallMatricesMultiplyDescsArray* InitSmallMatricesMultiplyDescsArray() override;
+		const CFloatHandle& outputHandle ) override;
 	CRowwiseOperationDesc* InitRowwiseActivation( const CActivationDesc& desc ) override;
 	CRowwiseOperationDesc* InitRowwiseChWith1x1( int stride, const CConstFloatHandle& channelwiseFilter,
 		const CConstFloatHandle* channelwiseFreeTerm, TActivationFunction activation, float reluParam,
@@ -629,36 +606,35 @@ public:
 	void RowwiseExecute( const CBlobDesc& inputDesc, CRowwiseOperationDesc** operations, int operationCount,
 		const CFloatHandle& input, const CFloatHandle& output ) override;
 
-	IPerformanceCounters* CreatePerformanceCounters() const override;
+	IPerformanceCounters* CreatePerformanceCounters( bool isOnlyTime ) const override;
+	// For Distributed only
 	void AllReduce( const CFloatHandle& handle, int size ) override;
 	void Broadcast( const CFloatHandle& handle, int size, int root ) override;
 	void AbortDistributed() override;
 	CMathEngineDistributedInfo GetDistributedInfo() override { return distributedInfo; }
-	bool IsDistributed() override { return distributedInfo.Threads > 1; }
+	bool IsDistributed() const override { return distributedInfo.Threads > 1; }
+
 protected:
 	// IRawMemoryManager interface methods
 	CMemoryHandle Alloc( size_t size ) override;
 	void Free( const CMemoryHandle& handle ) override;
 
+	void CleanUpSpecial() override;
+
 private:
 	const int floatAlignment; // float alignment
-	const int memoryAlignment; // allocation alignment
 	std::shared_ptr<CMultiThreadDistributedCommunicator> communicator;
 	CMathEngineDistributedInfo distributedInfo;
-	const std::unique_ptr<CMemoryPool> memoryPool; // the memory manager
-	const std::unique_ptr<CDeviceStackAllocator> stackAllocator; // the stack memory allocator
-	mutable std::mutex mutex; // to protect the allocations
 
 	CDllLoader dllLoader; // loading library for simd instructions
 	std::unique_ptr<ISimdMathEngine> simdMathEngine; // interface for using simd instructions
-	SgemmFunc customSgemmFunction; // Used when it is availabled and is faster then default sgemm
+	SgemmFunc customSgemmFunction = nullptr; // Used when it is availabled and is faster then default sgemm
 
 	IMathEngine& mathEngine() { IMathEngine* engine = this; return *engine; }
 
 	void blob3dConvolution1x1x1( const CBlobDesc& source, const CBlobDesc& result,
 		int strideHeight, int strideWidth, int strideDepth,
-		const float* sourceData, const float* filterData, const float* freeTermData, float* resultData,
-		const CSmallMatricesMultiplyDescsArray* descs );
+		const float* sourceData, const float* filterData, const float* freeTermData, float* resultData );
 	void blob3dConvolution1x1x1Backward( const CCommon3dConvolutionDesc& desc, const float* outputDiffData,
 		const float* filterData, const CConstFloatHandle* freeTermData, float* inputDiffData );
 	void blob3dConvolution1x1x1LearnAdd( const CCommon3dConvolutionDesc& desc, const CConstFloatHandle& inputData,
@@ -685,34 +661,27 @@ private:
 
 	void multiplyMatrixByMatrix( const float* firstHandle, int firstHeight,
 		int firstWidth, int firstRowSize, const float* secondHandle, int secondWidth, int secondRowSize,
-		float* resultHandle, int resultRowSize, const CSmallMatricesMultiplyDesc* );
+		float* resultHandle, int resultRowSize );
 	void multiplyMatrixByMatrixAndAdd( const float* first, int firstHeight,
 		int firstWidth, int firstRowSize, const float* second, int secondWidth, int secondRowSize,
-		float* result, int resultRowSize, const CSmallMatricesMultiplyDesc* );
+		float* result, int resultRowSize );
 	void multiplyTransposedMatrixByMatrix( const float* first, int firstHeight, int firstWidth,
-		const float* second, int secondWidth, float* result, const CSmallMatricesMultiplyDesc* );
+		const float* second, int secondWidth, float* result );
 	void batchMultiplyTransposedMatrixByMatrix( int batchSize, const float* first, int firstHeight, int firstWidth,
-		const float* second, int secondWidth, float* result, const CSmallMatricesMultiplyDesc* );
+		const float* second, int secondWidth, float* result );
 	void multiplyTransposedMatrixByMatrixAndAdd( const float* first, int firstHeight, int firstWidth, int firstRowSize,
-		const float* second, int secondWidth, int secondRowSize, float* result, int resultRowSize,
-		const CSmallMatricesMultiplyDesc* );
+		const float* second, int secondWidth, int secondRowSize, float* result, int resultRowSize );
 	void multiplyMatrixByTransposedMatrix( const float* first, int firstHeight,
 		int firstWidth, int firstRowSize, const float* second, int secondHeight, int secondRowSize,
-		float* result, int resultRowSize, const CSmallMatricesMultiplyDesc* );
+		float* result, int resultRowSize );
 	void batchMultiplyMatrixByTransposedMatrix( int batchSize, const CConstFloatHandle& firstHandle, int firstHeight,
-		int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle,
-		const CSmallMatricesMultiplyDesc* );
+		int firstWidth, const CConstFloatHandle& secondHandle, int secondHeight, const CFloatHandle& resultHandle );
 	void multiplyMatrixByTransposedMatrixAndAdd( const float* first, int firstHeight, int firstWidth, int firstRowSize,
-		const float* second, int secondHeight, int secondRowSize, float* result, int resultRowSize,
-		const CSmallMatricesMultiplyDesc* );
+		const float* second, int secondHeight, int secondRowSize, float* result, int resultRowSize );
 	void multiplyMatrixByDiagMatrix( const float* first, int firstHeight, int firstWidth,
 		const float* second, float* result );
 	void multiplyMatrixByTransposedWithFreeTerm( const float* first, int firstHeight,
-		int firstWidth, const float* second, int secondHeight, const float* freeTerm, float* result,
-		const CSmallMatricesMultiplyDesc* );
-	// Using previosly created descriptor of fixed size multiply these exact matrices
-	// Returns false if description is not valid for these matrices sizes
-	bool smallMatricesMultiply( const CSmallMatricesMultiplyDesc*, const float* first, const float* second, float* result ) const;
+		int firstWidth, const float* second, int secondHeight, const float* freeTerm, float* result );
 
 	template<class T>
 	void blobMergeByDimCommon( int dimNum, const CBlobDesc* from, const CTypedMemoryHandle<T>* fromData,

@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -30,7 +30,7 @@ __global__ void BlobGlobalMaxOverTimePoolingWithIndexKernel( const CCudaGlobalMa
 	const int objectCount = source.BatchLength();
 	const int objectSize = source.BlobSize() / objectCount;
 
-	int objectNum;
+	int objectNum = 0;
 	if( !GetCudaTaskIndex( objectSize, objectNum ) ) {
 		return;
 	}
@@ -60,7 +60,7 @@ __global__ void BlobGlobalMaxOverTimePoolingKernel( const CCudaGlobalMaxOverTime
 	const int objectCount = source.BatchLength();
 	const int objectSize = source.BlobSize() / objectCount;
 
-	int objectNum;
+	int objectNum = 0;
 	if( !GetCudaTaskIndex( objectSize, objectNum ) ) {
 		return;
 	}
@@ -80,10 +80,11 @@ __global__ void BlobGlobalMaxOverTimePoolingKernel( const CCudaGlobalMaxOverTime
 }
 
 __global__ void BlobGlobalMaxOverTimePoolingBackwardKernel( const CCudaGlobalMaxOverTimePoolingDescInternal desc,
-	const float* __restrict__ resultDiff, const int* __restrict__ maxIndicesData, float* sourceDiff )
+	const float* __restrict__ resultDiff, const int* __restrict__ maxIndicesData, float* __restrict__ sourceDiff )
 {
 	const CCudaBlobDesc& result = desc.Result;
-	int pos;
+
+	int pos = 0;
 	if( !GetCudaTaskIndex( result.BlobSize(), pos ) ) {
 		return;
 	}

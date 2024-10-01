@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -58,6 +58,9 @@ private:
 	void Reshape() override;
 	void RunOnce() override;
 	void BackwardOnce() override { NeoAssert( false ); }
+	// Specialization for transferParamsBlob
+	bool ContainsNullParamBlob( int i ) const override
+		{ return paramBlobs[i] == nullptr && ( i == P_ChannelwiseFreeTerm || i == P_ExpandFreeTerm ); }
 
 private:
 	// paramBlobs indices
@@ -74,7 +77,6 @@ private:
 	int stride; // stride of channelwise convolution
 	CActivationDesc channelwiseActivation; // activation applied after channelwise convolution
 	CChannelwiseConvolutionDesc* convDesc; // descriptor of channelwise convolution
-	CSmallMatricesMultiplyDescsArray* smallMatricesMulDescs = nullptr;
 };
 
 // Emulates the part of the block which goes after Squeeze-and-Excite
@@ -94,7 +96,6 @@ public:
 	CMobileNetV3PostSEBlockLayer( IMathEngine& mathEngine, const CActivationDesc& activation,
 		const CPtr<CDnnBlob>& downFilter, const CPtr<CDnnBlob>& downFreeTerm );
 	explicit CMobileNetV3PostSEBlockLayer( IMathEngine& mathEngine );
-	~CMobileNetV3PostSEBlockLayer() override;
 
 	// Activation
 	// Applied on the result of Mul(ChannelwiseConv, Squeeze-and-Excite)
@@ -113,6 +114,9 @@ protected:
 	void Reshape() override;
 	void RunOnce() override;
 	void BackwardOnce() override { NeoAssert( false ); }
+	// Specialization for transferParamsBlob
+	bool ContainsNullParamBlob( int i ) const override
+		{ return paramBlobs[i] == nullptr && ( i == P_DownFreeTerm ); }
 
 private:
 	// paramBlobs indices
@@ -133,7 +137,6 @@ private:
 	};
 
 	CActivationDesc activation; // activation applied after channelwise convolution
-	CSmallMatricesMultiplyDescsArray* smallMatricesMulDescs = nullptr;
 };
 
 } // namespace NeoML

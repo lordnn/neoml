@@ -1,4 +1,4 @@
-/* Copyright © 2017-2020 ABBYY Production LLC
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -139,7 +139,7 @@ void CVulkanMathEngine::BlobRleConvolution( const CRleConvolutionDesc& desc, con
 	const CVulkanRleConvolutionDesc& rleDesc = static_cast<const CVulkanRleConvolutionDesc&>( desc );
 	const CCommonConvolutionDesc* convDesc = static_cast<const CCommonConvolutionDesc*>( rleDesc.ConvDesc );
 
-	CFloatHandleVar inputConverted( mathEngine(), convDesc->Source.BlobSize() );
+	CFloatHandleStackVar inputConverted( mathEngine(), convDesc->Source.BlobSize() );
 	blobConvertFromRleCommon( rleDesc, sourceData, inputConverted );
 	BlobConvolution( *(rleDesc.ConvDesc), inputConverted, filterData, freeTermData, resultData );
 }
@@ -175,8 +175,9 @@ CTimeConvolutionDesc* CVulkanMathEngine::InitTimeConvolution( const CBlobDesc& s
 	ASSERT_EXPR( paddingFront < ( filter.Height() - 1 ) * dilation + 1 );
 	ASSERT_EXPR( paddingBack < ( filter.Height() - 1 ) * dilation + 1 );
 
-	CCommonTimeConvolutionDesc* desc = new CCommonTimeConvolutionDesc( *this,
-		source, filter, result, stride, paddingFront, paddingBack, dilation );
+	CCommonTimeConvolutionDesc* desc = new CCommonTimeConvolutionDesc(
+		source, result, filter, stride, paddingFront, paddingBack, dilation );
+	ASSERT_EXPR( ( desc->Result.BatchLength() * desc->Source.BatchWidth() ) * desc->Filter.ObjectCount() <= desc->Result.BlobSize() );
 	return desc;
 }
 
@@ -192,11 +193,9 @@ void CVulkanMathEngine::BlobTimeConvolution( const CTimeConvolutionDesc& convDes
 	const CBlobDesc& source = desc.Source;
 	const CBlobDesc& filter = desc.Filter;
 	const CBlobDesc& result = desc.Result;
+	const bool useTempMatrix = desc.Stride > 1 || filter.Height() > 1;
 
 	int workspaceSize = 0;
-
-	bool useTempMatrix = desc.Stride > 1 || filter.Height() > 1;
-
 	if( useTempMatrix ) {
 		// Create a temporary matrix
 		workspaceSize = result.BatchLength() * source.BatchWidth() * filter.Height() * source.ObjectSize();
@@ -250,7 +249,7 @@ C3dConvolutionDesc* CVulkanMathEngine::InitBlob3dConvolution( const CBlobDesc& s
 	int strideHeight, int strideWidth, int strideDepth,
 	const CBlobDesc& filter, const CBlobDesc& result )
 {
-	CCommon3dConvolutionDesc* desc = new CCommon3dConvolutionDesc( *this,
+	CCommon3dConvolutionDesc* desc = new CCommon3dConvolutionDesc(
 		source, result, filter, paddingHeight, paddingWidth, paddingDepth,
 		strideHeight, strideWidth, strideDepth );
 	return desc;

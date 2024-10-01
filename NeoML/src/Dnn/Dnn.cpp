@@ -1,4 +1,4 @@
-/* Copyright © 2017-2023 ABBYY
+/* Copyright © 2017-2024 ABBYY
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -43,6 +43,7 @@ limitations under the License.
 #include <NeoML/Dnn/Layers/MultichannelLookupLayer.h>
 #include <NeoML/Dnn/Layers/MultiheadAttentionLayer.h>
 #include <NeoML/Dnn/Layers/ObjectNormalizationLayer.h>
+#include <NeoML/Dnn/Layers/ParameterLayer.h>
 #include <NeoML/Dnn/Layers/PoolingLayer.h>
 #include <NeoML/Dnn/Layers/RecurrentLayer.h>
 #include <NeoML/Dnn/Layers/QrnnLayer.h>
@@ -83,6 +84,7 @@ limitations under the License.
 #include <NeoML/Dnn/Layers/InterpolationLayer.h>
 #include <NeoML/Dnn/Layers/IrnnLayer.h>
 #include <NeoML/Dnn/Layers/LogicalLayers.h>
+#include <NeoML/Dnn/Layers/LoraFullyConnectedLayer.h>
 #include <NeoML/Dnn/Layers/LrnLayer.h>
 #include <NeoML/Dnn/Layers/MaxOverTimePoolingLayer.h>
 #include <NeoML/Dnn/Layers/MobileNetV3BlockLayer.h>
@@ -204,17 +206,17 @@ void SerializeLayer( CArchive& archive, IMathEngine& mathEngine, CPtr<CBaseLayer
 {
 	if( archive.IsStoring() ) {
 		CString name = getLayerClass( layer );
-		NeoAssert( layer == nullptr || name != "" ); // assertion on storing not registered layer
+		NeoAssertMsg( layer == nullptr || name != "", "Try to store non-registered layer" );
 		archive << name;
-		if( layer != 0 ) {
+		if( layer != nullptr ) {
 			layer->Serialize( archive );
 		}
 	} else if( archive.IsLoading() ) {
 		CString name;
 		archive >> name;
 		layer = createLayer( mathEngine, name );
-		CheckArchitecture( name == "" || layer != nullptr, name, "restoring unknown layer from archive" );
-		if( layer != 0 ) {
+		CheckArchitecture( name == "" || layer != nullptr, name, "Try to restore unknown layer from archive" );
+		if( layer != nullptr ) {
 			layer->Serialize( archive );
 		}
 	} else {
@@ -284,6 +286,7 @@ REGISTER_NEOML_LAYER( CMatrixMultiplicationLayer, "NeoMLDnnMatrixMultiplicationL
 REGISTER_NEOML_LAYER( CMobileNetV2BlockLayer, "NeoMLDnnMobileNetV2BlockLayer" )
 REGISTER_NEOML_LAYER( CMultiheadAttentionLayer, "NeoMLDnnMultiheadAttentionLayer" )
 REGISTER_NEOML_LAYER( CObjectNormalizationLayer, "NeoMLDnnObjectNormalizationLayer" )
+REGISTER_NEOML_LAYER( CParameterLayer, "NeoMLDnnParameterLayer" )
 REGISTER_NEOML_LAYER( CQrnnFPoolingLayer, "NeoMLDnnQrnnFPoolingLayer" )
 REGISTER_NEOML_LAYER( CQrnnIfPoolingLayer, "NeoMLDnnQrnnIfPoolingLayer" )
 REGISTER_NEOML_LAYER( CQrnnLayer, "NeoMLDnnQrnnLayer" )
@@ -355,6 +358,7 @@ REGISTER_NEOML_LAYER( CImageResizeLayer, "FmlCnnImageResizeLayer" )
 REGISTER_NEOML_LAYER( CImageToPixelLayer, "FmlCnnImageToPixelLayerClass" )
 REGISTER_NEOML_LAYER( CFocalLossLayer, "FmlCnnFocalLossLayer" )
 REGISTER_NEOML_LAYER( CFullyConnectedSourceLayer, "FmlCnnFullyConnectedSourceLayer" )
+REGISTER_NEOML_LAYER( CLoraFullyConnectedLayer, "NeoMLDnnLoraFullyConnectedLayer" )
 REGISTER_NEOML_LAYER( CMaxOverTimePoolingLayer, "FmlCnnMaxOverTimePoolingLayer" )
 REGISTER_NEOML_LAYER( CMobileNetV3PreSEBlockLayer, "NeoMLDnnMobileNetV3PreSEBlockLayer" )
 REGISTER_NEOML_LAYER( CMobileNetV3PostSEBlockLayer, "NeoMLDnnMobileNetV3PostSEBlockLayer" )
@@ -397,29 +401,18 @@ REGISTER_NEOML_LAYER( CWhereLayer, "NeoMLDnnWhereLayer" )
 
 //---------------------------------------------------------------------------------------------------------
 
-CDnn::CDnn( CRandom& _random, IMathEngine& _mathEngine, const CCompositeLayer* owner ) :
-	owner( owner ),
-	log( 0 ),
-	logFrequency( 100 ),
+CDnn::CDnn( CRandom& _random, IMathEngine& _mathEngine, const CCompositeLayer* _owner ) :
 	random( _random ),
 	mathEngine( _mathEngine ),
-	runNumber( -1 ),
-	isRebuildNeeded( false ),
-	isBackwardPerformed( false ),
-	isLearningEnabled( true ),
-	isRecurrentMode( false ),
-	maxSequenceLength( 1 ),
-	currentSequencePos( 0 ),
-	isReverseSequense( false ),
-	autoRestartMode( true ),
-	isReuseMemoryMode( false )
+	solver( FINE_DEBUG_NEW CDnnSimpleGradientSolver( mathEngine ) ),
+	initializer( FINE_DEBUG_NEW CDnnXavierInitializer( random ) ),
+	owner( _owner )
 {
-	solver = FINE_DEBUG_NEW CDnnSimpleGradientSolver( mathEngine );
-	initializer = FINE_DEBUG_NEW CDnnXavierInitializer( random );
 }
 
 CDnn::~CDnn()
 {
+	referenceDnnInfo.Release();
 	for( int i = layers.Size() - 1; i >= 0; i-- ) {
 		CPtr<CBaseLayer> layer = layers[i];
 		DeleteLayer( *layer );
@@ -438,6 +431,17 @@ void CDnn::GetLayerList( CArray<const char*>& layerList ) const
 
 CPtr<CBaseLayer> CDnn::GetLayer( const char* name )
 {
+	CBaseLayer* layer = getLayer( name );
+
+	NeoAssertMsg( !IsReferenceDnn()
+		|| dynamic_cast<CSourceLayer*>( layer ) != nullptr
+		|| dynamic_cast<CSinkLayer*>( layer ) != nullptr,
+		"For ReferenceDnn changing layers is restricted. Use const version instead." );
+	return layer;
+}
+
+CBaseLayer* CDnn::getLayer( const char* name )
+{
 	CheckArchitecture( layerMap.Has( name ), name, "layer is not in this dnn" );
 	return layerMap.Get( name );
 }
@@ -448,8 +452,45 @@ CPtr<const CBaseLayer> CDnn::GetLayer( const char* name ) const
 	return layerMap.Get( name );
 }
 
+CPtr<CBaseLayer> CDnn::GetLayer( const CArray<CString>& path )
+{
+	CBaseLayer* layer = getLayer( path );
+
+	NeoAssertMsg( !IsReferenceDnn()
+		|| dynamic_cast<CSourceLayer*>( layer ) != nullptr
+		|| dynamic_cast<CSinkLayer*>( layer ) != nullptr,
+		"For ReferenceDnn changing layers is restricted. Use const version instead." );
+	return layer;
+}
+
+CBaseLayer* CDnn::getLayer( const CArray<CString>& path )
+{
+	CheckArchitecture(path.Size() > 0, "NULL", "can not find layer - empty path");
+	if (path.Size() == 1) {
+		return getLayer( path[0] );
+	} else {
+		CheckArchitecture(layerMap.Has(path[0]), path[0], "layer is not in this dnn");
+		CPtr<CCompositeLayer> currComp = CheckCast<CCompositeLayer>( getLayer( path[0] ) );
+		for (int i = 1; i < path.Size() - 1; ++i) {
+			CheckArchitecture(currComp->HasLayer(path[i]), path[i], "layer is not in this composite layer");
+			currComp = CheckCast<CCompositeLayer>(currComp->GetLayer(path[i]).Ptr());
+		}
+		CheckArchitecture(currComp->HasLayer(path.Last()), path.Last(), "layer is not contained by this path");
+		return currComp->GetLayer(path.Last());
+	}
+}
+
+CPtr<const CBaseLayer> CDnn::GetLayer(const CArray<CString>& path) const
+{
+	return const_cast<CDnn*>(this)->getLayer(path);
+}
+
 void CDnn::AddLayerImpl( CBaseLayer& layer )
 {
+	NeoAssertMsg( !IsReferenceDnn()
+		|| dynamic_cast<CCompositeSourceLayer*>( &layer ) != nullptr
+		|| dynamic_cast<CCompositeSinkLayer*>( &layer ) != nullptr,
+		"For ReferenceDnn adding layers is restricted" );
 	layer.CheckLayerArchitecture( !layerMap.Has( layer.GetName() ), "layer already in this dnn" );
 	layer.CheckLayerArchitecture( layer.GetDnn() == 0, "layer already added to other dnn" );
 
@@ -473,6 +514,10 @@ void CDnn::ForceRebuild()
 
 void CDnn::DeleteLayerImpl( CBaseLayer& layer )
 {
+	NeoAssertMsg( !IsReferenceDnn()
+		|| dynamic_cast<CCompositeSourceLayer*>( &layer ) != nullptr
+		|| dynamic_cast<CCompositeSinkLayer*>( &layer ) != nullptr,
+		"For ReferenceDnn deleting layers is restricted" );
 	layer.CheckLayerArchitecture( HasLayer( layer.GetName() ), "deletion of the layer which is not in this dnn" );
 
 	// Set the flag that indicates the network should be rebuilt (configuration has changed)
@@ -513,6 +558,7 @@ void CDnn::DisableLearning()
 
 void CDnn::EnableLearning()
 {
+	NeoAssertMsg( !IsReferenceDnn(), "For ReferenceDnn learning is restricted" );
 	if( isLearningEnabled ) {
 		return;
 	}
@@ -652,10 +698,10 @@ void CDnn::RunAndLearnOnce()
 	solver->Train();
 }
 
-void CDnn::CleanUp()
+void CDnn::CleanUp( bool totalCleanUp )
 {
 	for( int i = 0; i < layers.Size(); i++ ) {
-		layers[i]->CleanUp();
+		layers[i]->CleanUp( totalCleanUp );
 	}
 }
 
@@ -745,6 +791,7 @@ size_t CDnn::getOutputBlobsSize() const
 
 void CDnn::FilterLayersParams( float threshold )
 {
+	NeoAssertMsg( !IsReferenceDnn(), "For ReferenceDnn filtering layers parameters is restricted" );
 	for( int i = 0; i < layers.Size(); ++i ) {
 		layers[i]->FilterLayerParams( threshold );
 	}
@@ -752,28 +799,30 @@ void CDnn::FilterLayersParams( float threshold )
 
 void CDnn::FilterLayersParams( const CArray<const char*>& layers, float threshold )
 {
+	NeoAssertMsg( !IsReferenceDnn(), "For ReferenceDnn filtering layers parameters is restricted" );
 	for( int i = 0; i < layers.Size(); ++i ) {
 		GetLayer( layers[i] )->FilterLayerParams( threshold );
 	}
 }
 
-static const int DnnVersion = 2000;
+static constexpr int dnnVersion = 2000;
 
 void CDnn::Serialize( CArchive& archive )
 {
-	if( archive.IsStoring() ) {
-		archive << DnnVersion;
-		archive << logFrequency;
+	NeoAssertMsg( !IsReferenceDnn(), "For ReferenceDnn serializing is restricted" );
 
-		archive << layers.Size();
-		for( int i = 0; i < layers.Size(); ++i ) {
-			archive << getLayerClass( layers[i] );
-			if( layers[i] != 0 ) {
-				layers[i]->Serialize( archive );
-			}
+	int version = dnnVersion;
+	archive.Serialize( version );
+
+	if( archive.IsLoading() ) {
+		// Calculate the data
+		if( version < 0 ) {
+			version = -version;
 		}
-		archive << isLearningEnabled;
-	} else if( archive.IsLoading() ) {
+		if( version < CDnn::ArchiveMinSupportedVersion || version > dnnVersion ) {
+			check( false, ERR_BAD_ARCHIVE_VERSION, archive.Name() );
+		}
+
 		// Clean up the network
 		while( layers.Size() > 0 ) {
 			DeleteLayer( *layers[0] );
@@ -781,35 +830,28 @@ void CDnn::Serialize( CArchive& archive )
 		runNumber = 0;
 		isRebuildNeeded = false;
 		isBackwardPerformed = false;
+	}
 
-		// Calculate the data
-		int version;
-		archive >> version;
-		if( version < 0 ) {
-			version = -version;
+	archive.Serialize( logFrequency );
+
+	int layersSize = layers.Size();
+	archive.Serialize( layersSize );
+	for( int i = 0; i < layersSize; ++i ) {
+		CPtr<CBaseLayer> layer;
+		if( archive.IsStoring() ) {
+			layer = layers[i];
 		}
-
-		if( version < CDnn::ArchiveMinSupportedVersion || version > DnnVersion ) {
-			check( false, ERR_BAD_ARCHIVE_VERSION, archive.Name() );
-		}
-
-		archive >> logFrequency;
-
-		int layerCount;
-		archive >> layerCount;
-		for( int i = 0; i < layerCount; ++i ) {
-			CString className;
-			archive >> className;
-			CPtr<CBaseLayer> layer = createLayer( GetMathEngine(), className );
-			check( layer != 0, ERR_BAD_ARCHIVE, archive.Name() );
-			layer->Serialize( archive );
+		SerializeLayer( archive, mathEngine, layer );
+		if( archive.IsLoading() ) {
 			AddLayer( *layer );
 		}
-		archive >> isLearningEnabled;
+	}
+
+	archive.Serialize( isLearningEnabled );
+
+	if( archive.IsLoading() ) {
 		// In order to avoid the CDnnSolver::Reset for the next solver
 		rebuild();
-	} else {
-		NeoAssert( false );
 	}
 }
 
